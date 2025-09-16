@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Gestore Punti — Firebase (Mobile)</title>
+    <title>LogisticApp - BRC</title>
 
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -99,7 +99,8 @@
             const [createOpen, setCreateOpen] = useState(false);
             const [createPlayer, setCreatePlayer] = useState({ name: "", teamId: "" });
 
-            const [activeTab, setActiveTab] = useState("addPoints"); // Estado para la navegación por pestañas
+            const [activeTab, setActiveTab] = useState("addPoints");
+            const [showLoginModal, setShowLoginModal] = useState(false); // Nuevo estado para el modal de login
 
             useEffect(() => onAuthStateChanged(auth, (u)=>setUser(u||null)), []);
 
@@ -139,7 +140,10 @@
                 e.preventDefault();
                 const email = e.target.email.value.trim();
                 const password = e.target.password.value;
-                try { await signInWithEmailAndPassword(auth, email, password); }
+                try {
+                    await signInWithEmailAndPassword(auth, email, password);
+                    setShowLoginModal(false); // Cierra el modal al iniciar sesión
+                }
                 catch(err) { alert("Login fallito: " + err.message); }
             }
             function doLogout() { signOut(auth); }
@@ -178,22 +182,22 @@
             return (
                 <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
                     <header className="flex items-center justify-between p-4 bg-gray-900 border-b border-gray-800">
-                        <h1 className="text-xl font-bold">Gestore Punti</h1>
+                        <h1 className="text-xl font-bold">LogisticApp - BRC 🏉</h1>
                         <div className="flex items-center gap-2">
                             {user ? (
                                 <div className="flex items-center gap-2">
                                     <span className={"text-xs px-2 py-1 rounded " + (isAllowed ? "bg-emerald-700":"bg-gray-700")}>
                                         {isAllowed ? "Scrittura abilitata":"Sola lettura"}
                                     </span>
-                                    <button onClick={doLogout} className="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700">Esci</button>
+                                    <button onClick={doLogout} className="text-sm px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700">Esci</button>
                                 </div>
                             ) : (
-                                <LoginForm onSubmit={doLogin} />
+                                <button onClick={() => setShowLoginModal(true)} className="text-sm px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500">Accedi</button>
                             )}
                         </div>
                     </header>
 
-                    <main className="flex-grow p-4 overflow-y-auto">
+                    <main className="flex-grow p-4 overflow-y-auto pb-20"> {/* Aumentado el padding-bottom para la barra de navegación */}
                         {activeTab === "addPoints" && (
                             <section className={"rounded-2xl p-4 shadow " + (isAllowed ? "bg-gray-900":"bg-gray-900/60")}>
                                 <div className="flex items-center justify-between mb-3">
@@ -295,11 +299,11 @@
                                     <table className="min-w-full text-sm">
                                         <thead className="bg-gray-800">
                                             <tr className="text-left text-gray-300">
-                                                <th className="px-3 py-2">Data</th>
                                                 <th className="px-3 py-2">Squadra</th>
                                                 <th className="px-3 py-2">Giocatore</th>
                                                 <th className="px-3 py-2">Evento</th>
                                                 <th className="px-3 py-2">Δ Punti</th>
+                                                <th className="px-3 py-2">Data</th>
                                                 <th className="px-3 py-2"></th>
                                             </tr>
                                         </thead>
@@ -313,11 +317,11 @@
                                                 const stamp = item.ts?.toDate ? item.ts.toDate().toLocaleString() : "-";
                                                 return (
                                                     <tr key={item.fid} className="border-t border-gray-800">
-                                                        <td className="px-3 py-2 whitespace-nowrap">{stamp}</td>
                                                         <td className="px-3 py-2">{teamName}</td>
                                                         <td className="px-3 py-2">{playerName}</td>
                                                         <td className="px-3 py-2">{eventName}</td>
                                                         <td className={"px-3 py-2 " + (item.delta>=0 ? "text-emerald-400":"text-red-400")}>{item.delta>=0?"+":""}{item.delta}</td>
+                                                        <td className="px-3 py-2 whitespace-nowrap">{stamp}</td>
                                                         <td className="px-3 py-2 text-right">
                                                             <button onClick={()=> removeMovement(item.fid)} disabled={!isAllowed} className={"text-sm px-2 py-1 rounded-lg " + (isAllowed ? "bg-gray-700 hover:bg-gray-600":"bg-gray-800 opacity-50 cursor-not-allowed")}>Cancella</button>
                                                         </td>
@@ -380,7 +384,7 @@
                             className={`flex flex-col items-center p-2 rounded-xl text-xs font-medium ${activeTab === "dashboard" ? "text-emerald-400 bg-gray-800" : "text-gray-400 hover:text-gray-300"}`}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125l7.246-7.246a4.5 4.015 0 0 1 6.136-.554l.001.001 2.929 2.929A3.75 3.75 0 0 1 21 12.125V19.5M3 13.125h1.75c.95 0 1.874.195 2.722.568M3 13.125a6.5 6.5 0 0 0 2.222 3.03M12 7.5h.008v.008H12V7.5Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM12 15h.008v.008H12V15Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm3.75-5.25h.008v.008h-.008V9.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125l7.246-7.246a4.5 4.015 0 0 1 6.136-.554l.001.001 2.929 2.929A3.75 3.75 0 0 1 21 12.125V19.5M3 13.125h1.75c.95 0 1.874.195 2.722.568M3 13.125a6.5 6.5 0 0 0 2.222 3.03M12 7.5h.008v.008H12V7.5Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM12 15h.008v.008H12V15Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM12 15h.008v.008H12V15Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm3.75-5.25h.008v.008h-.008V9.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
                             </svg>
                             Dashboard
                         </button>
@@ -403,28 +407,48 @@
                             </div>
                         </div>
                     )}
+
+                    {/* Modal de Login */}
+                    {showLoginModal && (
+                        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-40">
+                            <LoginForm onSubmit={doLogin} onCancel={() => setShowLoginModal(false)} />
+                        </div>
+                    )}
                 </div>
             );
         }
 
-        function LoginForm({ onSubmit }) {
+        function LoginForm({ onSubmit, onCancel }) {
             const [show, setShow] = React.useState(false);
             return (
-                <form onSubmit={onSubmit} className="flex flex-col gap-2 p-3 bg-gray-800 rounded-xl shadow-inner">
-                    <input name="email" type="email" placeholder="Email" className="px-3 py-2 rounded-lg bg-gray-700 text-sm" required />
+                <form onSubmit={onSubmit} className="flex flex-col gap-3 p-4 bg-gray-900 rounded-2xl shadow-xl max-w-sm w-full border border-gray-800">
+                    <h3 className="text-xl font-semibold mb-2 text-center">Accedi</h3>
+                    <input name="email" type="email" placeholder="Email" className="px-3 py-2 rounded-xl bg-gray-800 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" required />
                     <div className="flex items-center gap-2">
-                        <input name="password" type={show ? "text" : "password"} placeholder="Password" className="flex-grow px-3 py-2 rounded-lg bg-gray-700 text-sm" required />
-                        <button type="button" onClick={()=>setShow(s=>!s)} className="p-2 rounded-lg bg-gray-600 text-sm">{show?"🙈":"👁️"}</button>
+                        <input name="password" type={show ? "text" : "password"} placeholder="Password" className="flex-grow px-3 py-2 rounded-xl bg-gray-800 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                        <button type="button" onClick={()=>setShow(s=>!s)} className="p-2 rounded-xl bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors">
+                            {show ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.988 5.5A.75.75 0 014.73 4.8l2.929 2.929a5.978 5.978 0 00.942 3.067L3.988 5.5zm11.455 1.943a5.979 5.979 0 00-3.067-.942L18.02 19.012a.75.75 0 01-.749.749H5.5a.75.75 0 01-.75-.75V12a.75.75 0 011.5 0v5.694l3.75-3.75a1.5 1.5 0 011.06-.44h.001M21.75 12a9.75 9.75 0 11-19.5 0 9.75 9.75 0 0119.5 0zm-1.874 4.094a3 3 0 01-3.374 1.25L12 12m1.5-1.5L9.75 7.75l-2.003-2.003V2.25H4.5M10.25 15.5l2-2 2.003-2.003V12.75H18m-4.5-4.5L9.75 7.75" />
+                                </svg>
+
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            )}
+                        </button>
                     </div>
-                    <button type="submit" className="mt-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Accedi</button>
+                    <div className="flex justify-end gap-2 mt-4">
+                        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-sm font-medium transition-colors">Annulla</button>
+                        <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors">Accedi</button>
+                    </div>
                 </form>
             );
         }
 
-        // --- Componentes Leaderboard, EventStats y Standings se mantienen casi igual,
-        //     pero sus contenedores se adaptan al flujo móvil.
-        //     Asegúrate de que los filtros dentro de Leaderboard sean responsivos.
-
+        // Leaderboard, EventStats y Standings se mantienen igual
         function Leaderboard({ players, tx }) {
             const map = new Map();
             for (const m of tx) { if (!m.playerId) continue; const cur = map.get(m.playerId)||{points:0,count:0}; cur.points += Number(m.delta)||0; cur.count += 1; map.set(m.playerId, cur); }
