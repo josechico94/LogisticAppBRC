@@ -76,6 +76,10 @@
             { id: "PRESENZE_100", name: "100% presenze", points: 3 },
             { id: "DUE_VS_UNO_MANCATO", name: "2vs1 mancato", points: -1 },
             { id: "DUTY_MALE", name: "Duty male", points: -1 },
+            { id: "TROMBATA_SCONOSCIUTA", name:"Trombata sconosciuta", points: 2},
+            { id: "PORTARE_RAGAZZA_NUOVA", name:"Portare ragazza nuova", points: 0.5},
+            { id: "MIGLIOR_COSTUME", name:"Miglior costume", points: 1.5},
+            { id: "MANCANZA_3TEMPO", name:"Mancanza 3° tempo", points: -0.5},
         ];
 
         function slugify(str) { return (str||"").normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'').toUpperCase(); }
