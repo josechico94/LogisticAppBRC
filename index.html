@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>LogisticApp - BRC</title>
+    <title>LogisticApp - BRC (Pro)</title>
 
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 
     <script type="module">
@@ -43,62 +44,41 @@
 <body class="bg-gray-950">
     <div id="root"></div>
 
-<script type="text/babel">
-    const { useEffect, useMemo, useState } = React;
+    <script type="text/babel">
+    // ======== HOOKS E LIBRERIE ========
+    const { useEffect, useMemo, useState, useRef } = React;
     const {
         db, collection, doc, addDoc, setDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs,
         auth, onAuthStateChanged, signInWithEmailAndPassword, signOut, ALLOWED_EMAILS
     } = window._fb;
+    // Chart.js è ora disponibile globalmente come window.Chart
+    const { Chart } = window;
 
+
+    // ======== DATI STATICI (SOLO SQUADRE) ========
     const TEAM_LIST = [
-        { id: "ISOLANI",   name: "ISOLANI" },
-        { id: "ALBERGATI", name: "ALBERGATI" },
-        { id: "CASALI",    name: "CASALI" },
-        { id: "MAGNANI",   name: "MAGNANI" },
+        { id: "ISOLANI",   name: "ISOLANI", color: "#3b82f6" }, // Blu
+        { id: "ALBERGATI", name: "ALBERGATI", color: "#16a34a" }, // Verde
+        { id: "CASALI",    name: "CASALI", color: "#eab308" }, // Giallo
+        { id: "MAGNANI",   name: "MAGNANI", color: "#dc2626" }, // Rosso
     ];
-
-    const EVENTS = [
-        { id: "MOTM", name: "MOTM", points: 3 },
-        { id: "PEGGIORE_IN_CAMPO", name: "Peggiore in campo", points: -3 },
-        { id: "META", name: "Meta", points: 1, allowQuantity: true },
-        { id: "DROP_SEGNATO", name: "Drop segnato", points: 1, allowQuantity: true },
-        { id: "CARTELLINO_GIALLO", name: "Cartellino Giallo", points: -1, allowQuantity: true },
-        { id: "CARTELLINO_ROSSO", name: "Cartellino rosso", points: -4, allowQuantity: true },
-        { id: "META_PIAZZATO_DELLA_VITTORIA", name: "Meta/piazzato della vittoria", points: 2 },
-        { id: "MIGLIOR_PLACCAGGIO", name: "Miglior placcaggio", points: 1 },
-        { id: "RUGBY_DUMP", name: "Rugby dump", points: 2 },
-        { id: "PROTESTE", name: "Proteste", points: -5 },
-        { id: "MIGLIORE_DELLA_SETTIMANA", name: "Migliore della settimana", points: 1 },
-        { id: "PIU_PLACCAGGI", name: "Più placcaggi", points: 3 },
-        { id: "MIGLIOR_BALL_CARRIER", name: "Miglior ball carrier", points: 3 },
-        { id: "PIU_PUNIZIONI_CONCESSE", name: "Più punizioni concesse", points: -4 },
-        { id: "MIGLIOR_TURNOVER", name: "Miglior turnover", points: 2 },
-        { id: "PRESENZE_100", name: "100% presenze", points: 3 },
-        { id: "DUE_VS_UNO_MANCATO", name: "2vs1 mancato", points: -1 },
-        { id: "DUTY_MALE", name: "Duty male", points: -1 },
-        { id: "TROMBATA_SCONOSCIUTA", name:"Trombata sconosciuta", points: 2},
-        { id: "PORTARE_RAGAZZA_NUOVA", name:"Portare ragazza nuova", points: 0.5},
-        { id: "MIGLIOR_COSTUME", name:"Miglior costume", points: 1.5},
-        { id: "MANCANZA_3TEMPO", name:"Mancanza 3° tempo", points: -0.5},
-        { id: "100% PRESENZE PRE SEASON", name:"100% presenze pre season", points: 6},
-        { id: "MIGLIOR DUTY SETTIMANALE", name:"Miglior duty settimanale", points: 1},
-        { id: "PUNIZIONE", name:"Punizione", points: 0.75, allowQuantity: true },
-        { id: "TRASFORMAZIONE", name:"Trasformazione", points: 0.45, allowQuantity: true }
-    ];
-
-    const QUANTITY_EVENTS = EVENTS.filter(e => e.allowQuantity).map(e => e.id);
+    
+    // GLI EVENTI SONO ORA CARICATI DA FIRESTORE (vedi App)
 
     function slugify(str) { return (str||"").normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'').toUpperCase(); }
 
+    // ======== COMPONENTE PRINCIPALE: App ========
     function App() {
         const [user, setUser] = useState(null);
         const isAllowed = user?.email && ALLOWED_EMAILS.includes(user.email);
 
+        // ======== STATI DINAMICI DA FIRESTORE ========
         const [players, setPlayers] = useState([]);
         const [tx, setTx] = useState([]);
-        
-        const playerInputRef = React.useRef(null);
+        const [events, setEvents] = useState([]); // NUOVO: Eventi caricati da DB
+        const [loading, setLoading] = useState(true);
 
+        const playerInputRef = React.useRef(null);
         const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
         const [form, setForm] = useState({ teamId: "", eventId: "", note: "", quantity: 1 });
         
@@ -113,37 +93,54 @@
         const [createOpen, setCreateOpen] = useState(false);
         const [createPlayer, setCreatePlayer] = useState({ name: "", teamId: "" });
 
-        const [activeTab, setActiveTab] = useState("addPoints");
+        const [activeTab, setActiveTab] = useState("dashboard"); // Dashboard come default
         const [showLoginModal, setShowLoginModal] = useState(false);
+        
+        // NUOVO: Stato per il modale del profilo giocatore
+        const [profilePlayerId, setProfilePlayerId] = useState(null);
 
+        // ======== EFFETTI (CARICAMENTO DATI) ========
         useEffect(() => onAuthStateChanged(auth, (u)=>setUser(u||null)), []);
 
         useEffect(() => {
-            const q = query(collection(db,"players"), orderBy("name"));
-            return onSnapshot(q, snap => setPlayers(snap.docs.map(d=>({ fid:d.id, ...d.data() }))));
+            setLoading(true);
+            const qPlayers = query(collection(db,"players"), orderBy("name"));
+            const qTx = query(collection(db,"tx"), orderBy("ts","desc"));
+            const qEvents = query(collection(db, "events_config"), orderBy("name")); // NUOVO: Query per eventi
+
+            const unsubPlayers = onSnapshot(qPlayers, snap => setPlayers(snap.docs.map(d=>({ fid:d.id, ...d.data() }))));
+            const unsubTx = onSnapshot(qTx, snap => setTx(snap.docs.map(d=>({ fid:d.id, ...d.data() }))));
+            
+            // NUOVO: Caricamento eventi da Firestore
+            const unsubEvents = onSnapshot(qEvents, snap => {
+                const eventsData = snap.docs.map(d=>({ fid:d.id, ...d.data() }));
+                setEvents(eventsData);
+                setLoading(false);
+            }, (err) => {
+                console.error("Errore caricamento eventi: ", err);
+                alert("ERRORE: Impossibile caricare la configurazione degli eventi da Firestore. Controlla la collection 'events_config'.");
+                setLoading(false);
+            });
+            
+            return () => { unsubPlayers(); unsubTx(); unsubEvents(); };
         }, []);
 
-        useEffect(() => {
-            const q = query(collection(db,"tx"), orderBy("ts","desc"));
-            return onSnapshot(q, snap => setTx(snap.docs.map(d=>({ fid:d.id, ...d.data() }))));
-        }, []);
-
+        // ======== MEMOS (CALCOLI) ========
         const selectedPlayers = useMemo(() => players.filter(p => selectedPlayerIds.includes(p.id)), [selectedPlayerIds, players]);
-        
-        const filteredPlayers = React.useMemo(()=> {
+        const filteredPlayers = useMemo(()=> {
             const q = playerQuery.trim().toLowerCase();
             return q ? players.filter(p=>p.name?.toLowerCase().includes(q)) : players;
         }, [playerQuery, players]);
 
-        const pointsMap = React.useMemo(()=> {
+        const pointsMap = useMemo(()=> {
             const m = Object.fromEntries(TEAM_LIST.map(t=>[t.id,0]));
             for (const t1 of tx) if (m[t1.teamId]!==undefined) m[t1.teamId]+=Number(t1.delta)||0;
             return m;
         }, [tx]);
 
-        const standings = React.useMemo(()=>([...TEAM_LIST.map(t=>({...t, points: pointsMap[t.id]||0})).sort((a,b)=>b.points-a.points||a.name.localeCompare(b.name))), [pointsMap]);
+        const standings = useMemo(()=>([...TEAM_LIST].map(t=>({...t, points: pointsMap[t.id]||0})).sort((a,b)=>b.points-a.points||a.name.localeCompare(b.name))), [pointsMap]);
 
-        const filteredTx = React.useMemo(()=> {
+        const filteredTx = useMemo(()=> {
             const start = dateFrom ? new Date(dateFrom+'T00:00:00').getTime() : -Infinity;
             const end = dateTo ? new Date(dateTo+'T23:59:59').getTime() : Infinity;
             return tx.filter(x=> {
@@ -152,15 +149,18 @@
             });
         }, [tx, filterTeam, filterEvent, dateFrom, dateTo]);
 
-        const selectedEvent = EVENTS.find(e => e.id === form.eventId);
+        // Memos per il form
+        const EVENTS_WITH_QUANTITY = useMemo(() => events.filter(e => e.allowQuantity).map(e => e.id), [events]);
+        const selectedEvent = events.find(e => e.id === form.eventId);
         const eventPoints = selectedEvent ? selectedEvent.points : 0;
         
-        // CORRECCIÓN BUG QUANTITY: Se permite que form.quantity sea "" (string vacío)
         const quantityValue = parseInt(form.quantity, 10);
-        const finalDelta = eventPoints * (QUANTITY_EVENTS.includes(form.eventId) ? (quantityValue > 0 ? quantityValue : 1) : 1);
+        const showQuantityInput = EVENTS_WITH_QUANTITY.includes(form.eventId);
+        const finalDelta = eventPoints * (showQuantityInput ? (quantityValue > 0 ? quantityValue : 1) : 1);
         
-        const showQuantityInput = QUANTITY_EVENTS.includes(form.eventId);
+        const isPlayerSelectionActive = selectedPlayerIds.length > 0;
         
+        // ======== FUNZIONI HANDLER ========
         async function doLogin(e) {
             e.preventDefault();
             const email = e.target.email.value.trim();
@@ -182,24 +182,19 @@
         async function addMovement() {
             if (!isAllowed) return alert("Non hai i permessi per scrivere.");
             if (!form.eventId) return alert("Seleziona un evento.");
-            
-            const isPlayerMovement = selectedPlayerIds.length > 0;
-            
-            if (isPlayerMovement && !selectedPlayerIds.length) return alert("Seleziona almeno un giocatore.");
-            if (!isPlayerMovement && !form.teamId) return alert("Seleziona una squadra per un movimento senza giocatore.");
-            
+            if (isPlayerSelectionActive && !selectedPlayerIds.length) return alert("Seleziona almeno un giocatore.");
+            if (!isPlayerSelectionActive && !form.teamId) return alert("Seleziona una squadra per un movimento senza giocatore.");
             if (!form.note) return alert("Aggiungi una nota.");
 
-            // CORRECCIÓN BUG QUANTITY: Se valida el valor parseado
             const quantity = showQuantityInput ? (parseInt(form.quantity, 10) || 1) : 1;
             if (showQuantityInput && (quantity <= 0 || !Number.isInteger(quantity))) return alert("La quantità deve essere un numero intero positivo.");
             
-            const delta = finalDelta; // finalDelta ya usa la cantidad parseada
+            const delta = finalDelta;
             const note = (form.note||"").trim();
             let transactionsCount = 0;
             
             try {
-                if (isPlayerMovement) {
+                if (isPlayerSelectionActive) {
                     const promises = selectedPlayers.map(player => {
                         transactionsCount++;
                         return addDoc(collection(db,"tx"), {
@@ -208,7 +203,7 @@
                             eventId: form.eventId,
                             delta,
                             note,
-                            quantity, // quantity ya está validada
+                            quantity,
                             ts: serverTimestamp(),
                             createdBy: user?.email || null,
                         });
@@ -228,12 +223,10 @@
                     });
                 }
                 
-                setForm(f => ({ ...f, eventId: "", note: "", quantity: 1 })); // Resetea quantity a 1
+                setForm(f => ({ ...f, eventId: "", note: "", quantity: 1 })); 
                 setSelectedPlayerIds([]);
                 setPlayerQuery("");
-                
                 alert(`Movimenti aggiunti con successo! Creadas ${transactionsCount} transacciones.`);
-
                 playerInputRef.current?.focus();
             } catch (error) {
                 console.error("Errore nell'aggiunta dei movimenti:", error);
@@ -250,10 +243,7 @@
             await setDoc(doc(collection(db,"players"), fid), { id: fid, name, teamId });
             setCreateOpen(false); 
             setSelectedPlayerIds(ids => [...ids, fid]);
-            
-            if (selectedPlayerIds.length === 0) {
-                 setForm(f=>({ ...f, teamId }));
-            }
+            if (selectedPlayerIds.length === 0) setForm(f=>({ ...f, teamId }));
             playerInputRef.current?.focus();
         }
 
@@ -272,9 +262,15 @@
             });
             playerInputRef.current?.focus(); 
         }
-        
-        const isPlayerSelectionActive = selectedPlayerIds.length > 0;
 
+        // NUOVO: Handler per aprire il profilo
+        function handleShowProfile(playerId) {
+            setProfilePlayerId(playerId);
+        }
+
+        if (loading) {
+             return <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center"><h1 className="text-xl font-bold">Caricamento LogisticApp...</h1></div>
+        }
 
         return (
             <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
@@ -295,6 +291,8 @@
                 </header>
 
                 <main className="flex-grow p-4 overflow-y-auto pb-20">
+                    
+                    {/* ======== TAB: ADD PUNTI ======== */}
                     {activeTab === "addPoints" && (
                         <section className={"rounded-2xl p-4 shadow " + (isAllowed ? "bg-gray-900":"bg-gray-900/60")}>
                             <div className="flex items-center justify-between mb-3">
@@ -305,9 +303,8 @@
                             <div className="grid grid-cols-1 gap-4 items-start">
                                 
                                 {/* 1. Campo Selezione Giocatore/i */}
-                                {/* El div 'relative' ya no es necesario aquí si la lista no es 'absolute' */}
                                 <div> 
-                                    <label className="text-sm text-gray-400">Giocatore/i (opzionale, seleziona più famiglie)</label>
+                                    <label className="text-sm text-gray-400">Giocatore/i (opzionale)</label>
                                     <input
                                         ref={playerInputRef} 
                                         value={playerQuery}
@@ -318,28 +315,18 @@
                                         className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"
                                         disabled={!isAllowed}
                                     />
-                                    {/* Lista Giocatori Selezionati */}
                                     {selectedPlayers.length > 0 && (
                                         <div className="flex flex-wrap gap-1 mt-2 p-1 border border-indigo-500 rounded-lg bg-gray-800 items-center">
                                             {selectedPlayers.map(p => (
                                                 <div key={p.id} className="flex items-center bg-indigo-700/50 text-xs px-2 py-1 rounded-full">
-                                                    <span>{p.name} - {TEAM_LIST.find(t=>t.id===p.teamId)?.name}</span>
-                                                    <button type="button" onClick={() => togglePlayerSelection(p.id)} className="ml-1 text-gray-200 hover:text-white">
-                                                        &times;
-                                                    </button>
+                                                    <span>{p.name}</span>
+                                                    <button type="button" onClick={() => togglePlayerSelection(p.id)} className="ml-1 text-gray-200 hover:text-white">&times;</button>
                                                 </div>
                                             ))}
-                                            <button 
-                                                type="button" 
-                                                onClick={clearPlayerSelection} 
-                                                className="text-xs px-2 py-1 rounded-full bg-red-700/50 text-white hover:bg-red-600/70 ml-auto transition-colors"
-                                            >
-                                                Limpiar Selección Total
-                                            </button>
+                                            <button type="button" onClick={clearPlayerSelection} className="text-xs px-2 py-1 rounded-full bg-red-700/50 text-white hover:bg-red-600/70 ml-auto transition-colors">Limpiar</button>
                                         </div>
                                     )}
 
-                                    {/* (MEJORA MOBILE) Lista dropdown (no 'absolute') */}
                                     {showList && isAllowed && (
                                         <div className="mt-1 w-full max-h-60 overflow-auto bg-gray-900 border border-gray-800 rounded-xl">
                                             {filteredPlayers.length === 0 ? (
@@ -347,15 +334,8 @@
                                             ) : filteredPlayers.map(p => {
                                                 const isSelected = selectedPlayerIds.includes(p.id);
                                                 return (
-                                                    <button 
-                                                        type="button" 
-                                                        key={p.fid} 
-                                                        onMouseDown={(e) => { 
-                                                            e.preventDefault(); 
-                                                            togglePlayerSelection(p.id); 
-                                                        }} 
-                                                        className={"w-full text-left px-3 py-2 border-b border-gray-800 flex items-center justify-between " + (isSelected ? "bg-indigo-700/30 hover:bg-indigo-700/50" : "hover:bg-gray-800")}
-                                                    >
+                                                    <button type="button" key={p.fid} onMouseDown={(e) => { e.preventDefault(); togglePlayerSelection(p.id); }} 
+                                                        className={"w-full text-left px-3 py-2 border-b border-gray-800 flex items-center justify-between " + (isSelected ? "bg-indigo-700/30 hover:bg-indigo-700/50" : "hover:bg-gray-800")}>
                                                         <span>{p.name}</span>
                                                         <span className="text-xs px-2 py-0.5 rounded bg-gray-800">{TEAM_LIST.find(t=>t.id===p.teamId)?.name}</span>
                                                     </button>
@@ -368,67 +348,44 @@
                                     </div>
                                 </div>
 
-                                {/* 2. Campo Squadra - Solo per movimenti senza giocatore */}
+                                {/* 2. Campo Squadra */}
                                 <div>
-                                    <label className="text-sm text-gray-400">Squadra {!isPlayerSelectionActive && "(obbligatorio se nessun giocatore selezionato)"}</label>
-                                    <select
-                                        value={form.teamId}
-                                        onChange={e=>setForm(f=>({ ...f, teamId:e.target.value }))}
-                                        className={"w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"}
-                                        disabled={!isAllowed}
-                                    >
+                                    <label className="text-sm text-gray-400">Squadra {!isPlayerSelectionActive && "(obbligatorio)"}</label>
+                                    <select value={form.teamId} onChange={e=>setForm(f=>({ ...f, teamId:e.target.value }))} className={"w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"} disabled={!isAllowed}>
                                         <option value="">— Seleziona —</option>
                                         {TEAM_LIST.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
-                                    {isPlayerSelectionActive && <p className="text-xs text-gray-500 mt-1">Quando sono selezionati dei giocatori, la squadra viene rilevata dal giocatore (anche se di squadre diverse).</p>}
+                                    {isPlayerSelectionActive && <p className="text-xs text-gray-500 mt-1">La squadra è rilevata dal giocatore.</p>}
                                 </div>
 
-                                {/* 3. Campo Evento */}
+                                {/* 3. Campo Evento (ora da DB) */}
                                 <div>
                                     <label className="text-sm text-gray-400">Evento</label>
-                                    <select 
-                                        value={form.eventId} 
-                                        onChange={e=>{ 
+                                    <select value={form.eventId} onChange={e=>{ 
                                             const evId=e.target.value; 
-                                            const ev=EVENTS.find(x=>x.id===evId); 
-                                            setForm(f=>({ 
-                                                ...f, 
-                                                eventId:evId, 
-                                                note: ev? ev.name : f.note,
-                                                quantity: 1 // Resetea a 1
-                                            })); 
-                                        }} 
-                                        className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800" 
-                                        disabled={!isAllowed}
-                                    >
+                                            const ev=events.find(x=>x.id===evId); 
+                                            setForm(f=>({ ...f, eventId:evId, note: ev? ev.name : f.note, quantity: 1 })); 
+                                        }} className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800" disabled={!isAllowed}>
                                         <option value="">— Seleziona —</option>
-                                        {EVENTS.map(ev => <option key={ev.id} value={ev.id}>{ev.name} ({ev.points>0?"+":""}{ev.points})</option>)}
+                                        {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name} ({ev.points>0?"+":""}{ev.points})</option>)}
                                     </select>
                                 </div>
                                 
-                                {/* 4. Campo Quantità (CORREGIDO) */}
+                                {/* 4. Campo Quantità (Corretto) */}
                                 {showQuantityInput && (
                                     <div>
                                         <label className="text-sm text-gray-400">Quantità (N. di eventi)</label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            step="1"
-                                            value={form.quantity}
-                                            onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} // Permite stringa vuota
-                                            className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"
-                                            disabled={!isAllowed}
+                                        <input type="number" min="1" step="1" value={form.quantity}
+                                            onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} 
+                                            className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800" disabled={!isAllowed}
                                         />
                                     </div>
                                 )}
-
-
                                 {/* 5. Campo Punti */}
                                 <div>
                                     <label className="text-sm text-gray-400">Punti Totali per Giocatore</label>
                                     <input value={finalDelta} readOnly disabled className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800 opacity-70 cursor-not-allowed" />
                                 </div>
-                                
                                 {/* 6. Campo Nota */}
                                 <div>
                                     <label className="text-sm text-gray-400">Nota (modificabile)</label>
@@ -436,26 +393,19 @@
                                 </div>
 
                                 <div className="flex justify-end">
-                                    <button 
-                                        onClick={addMovement} 
-                                        disabled={!isAllowed || !form.eventId || (!isPlayerSelectionActive && !form.teamId)} 
-                                        className={"px-4 py-2 rounded-xl font-medium " + (isAllowed && form.eventId && (isPlayerSelectionActive || form.teamId) ? "bg-emerald-600 hover:bg-emerald-500":"bg-gray-700 cursor-not-allowed")}
-                                    >
+                                    <button onClick={addMovement} disabled={!isAllowed || !form.eventId || (!isPlayerSelectionActive && !form.teamId)} 
+                                        className={"px-4 py-2 rounded-xl font-medium " + (isAllowed && form.eventId && (isPlayerSelectionActive || form.teamId) ? "bg-emerald-600 hover:bg-emerald-500":"bg-gray-700 cursor-not-allowed")}>
                                         Salva movimento{selectedPlayerIds.length > 1 ? ` (${selectedPlayerIds.length} giocatori)` : ''}
                                     </button>
                                 </div>
                             </div>
                         </section>
                     )}
-
-                    {/* Le altre sezioni (Storico, Dashboard, Footer, Modals) rimangono le stesse */}
-
+                    
+                    {/* ======== TAB: STORICO ======== */}
                     {activeTab === "history" && (
                         <section className="bg-gray-900 rounded-2xl p-4 shadow">
-                            <div className="mb-3">
-                                <h2 className="text-lg font-semibold">Storico</h2>
-                                <p className="text-xs text-gray-400">Filtra per squadra, evento e intervallo di date.</p>
-                            </div>
+                            <h2 className="text-lg font-semibold mb-3">Storico Movimenti</h2>
                             <div className="flex flex-col gap-2 mb-4 text-sm">
                                 <div className="flex flex-col">
                                     <span className="text-gray-400">Squadra:</span>
@@ -468,7 +418,7 @@
                                     <span className="text-gray-400">Evento:</span>
                                     <select value={filterEvent} onChange={e=>setFilterEvent(e.target.value)} className="px-3 py-2 rounded-xl bg-gray-800">
                                         <option value="">Tutti</option>
-                                        {EVENTS.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                                        {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
                                     </select>
                                 </div>
                                 <div className="flex flex-col">
@@ -491,7 +441,7 @@
                                             <th className="px-3 py-2">Squadra</th>
                                             <th className="px-3 py-2">Giocatore</th>
                                             <th className="px-3 py-2">Evento</th>
-                                            <th className="px-3 py-2">Quantità</th>
+                                            <th className="px-3 py-2">Q.tà</th>
                                             <th className="px-3 py-2">Δ Punti</th>
                                             <th className="px-3 py-2">Data</th>
                                             <th className="px-3 py-2"></th>
@@ -499,23 +449,22 @@
                                     </thead>
                                     <tbody>
                                         {filteredTx.length===0 ? (
-                                            <tr><td className="px-3 py-3 text-gray-400" colSpan={7}>Nessun movimento con i filtri attuali.</td></tr>
+                                            <tr><td className="px-3 py-3 text-gray-400" colSpan={7}>Nessun movimento.</td></tr>
                                         ) : filteredTx.map(item => {
                                             const teamName = TEAM_LIST.find(t=>t.id===item.teamId)?.name || item.teamId;
                                             const playerName = players.find(p=>p.id===item.playerId)?.name || "-";
-                                            const eventName = EVENTS.find(e=>e.id===item.eventId)?.name || "-";
+                                            const eventName = events.find(e=>e.id===item.eventId)?.name || "-";
                                             const stamp = item.ts?.toDate ? item.ts.toDate().toLocaleString() : "-";
-                                            const quantity = item.quantity || 1;
                                             return (
                                                 <tr key={item.fid} className="border-t border-gray-800">
                                                     <td className="px-3 py-2">{teamName}</td>
                                                     <td className="px-3 py-2">{playerName}</td>
                                                     <td className="px-3 py-2">{eventName}</td>
-                                                    <td className="px-3 py-2">{quantity}</td>
+                                                    <td className="px-3 py-2">{item.quantity || 1}</td>
                                                     <td className={"px-3 py-2 " + (item.delta>=0 ? "text-emerald-400":"text-red-400")}>{item.delta>=0?"+":""}{item.delta}</td>
                                                     <td className="px-3 py-2 whitespace-nowrap">{stamp}</td>
                                                     <td className="px-3 py-2 text-right">
-                                                        <button onClick={()=> removeMovement(item.fid)} disabled={!isAllowed} className={"text-sm px-2 py-1 rounded-lg " + (isAllowed ? "bg-gray-700 hover:bg-gray-600":"bg-gray-800 opacity-50 cursor-not-allowed")}>Cancella</button>
+                                                        <button onClick={()=> removeMovement(item.fid)} disabled={!isAllowed} className={"text-sm px-2 py-1 rounded-lg " + (isAllowed ? "bg-gray-700 hover:bg-gray-600":"bg-gray-800 opacity-50 cursor-not-allowed")}>X</button>
                                                     </td>
                                                 </tr>
                                             );
@@ -526,62 +475,44 @@
                         </section>
                     )}
 
+                    {/* ======== TAB: DASHBOARD (MIGLIORATA CON GRAFICI) ======== */}
                     {activeTab === "dashboard" && (
-                        <section className="bg-gray-900 rounded-2xl p-4 shadow">
-                            <div className="flex items-center justify-between mb-3">
-                                <h2 className="text-lg font-semibold">Dashboard</h2>
-                                <p className="text-xs text-gray-400">Aggiornamento in tempo reale.</p>
-                            </div>
+                        <DashboardPro
+                            standings={standings}
+                            players={players}
+                            tx={tx}
+                            events={events}
+                            onShowProfile={handleShowProfile}
+                        />
+                    )}
 
-                            <div className="mb-6">
-                                <h3 className="font-semibold mb-2">Classifica individuale</h3>
-                                <Leaderboard players={players} tx={filteredTx} />
-                            </div>
-
-                            <div className="mb-6">
-                                <h3 className="font-semibold mb-2">Eventi — frequenza e punti</h3>
-                                <EventStats tx={filteredTx} />
-                            </div>
-
-                            <div>
-                                <h3 className="font-semibold mb-2">Classifica squadre (tempo reale)</h3>
-                                <Standings standings={standings} />
-                            </div>
-                        </section>
+                    {/* ======== NUOVA TAB: ADMIN ======== */}
+                    {activeTab === "admin" && isAllowed && (
+                        <AdminPanel
+                            players={players}
+                            events={events}
+                            db={db}
+                            collection={collection}
+                            doc={doc}
+                            setDoc={setDoc}
+                            deleteDoc={deleteDoc}
+                            addDoc={addDoc}
+                            slugify={slugify}
+                        />
                     )}
                 </main>
 
+                {/* ======== NAVIGAZIONE FOOTER (CON TAB ADMIN) ======== */}
                 <footer className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex justify-around p-2 shadow-lg z-20">
-                    <button
-                        onClick={() => setActiveTab("addPoints")}
-                        className={`flex flex-col items-center p-2 rounded-xl text-xs font-medium ${activeTab === "addPoints" ? "text-emerald-400 bg-gray-800" : "text-gray-400 hover:text-gray-300"}`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                        Punti
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("history")}
-                        className={`flex flex-col items-center p-2 rounded-xl text-xs font-medium ${activeTab === "history" ? "text-emerald-400 bg-gray-800" : "text-gray-400 hover:text-gray-300"}`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375H12a3.375 3.375 0 0 0-3.375 3.375v2.625m3.375-3.375h.008v.008h-.008v-.008Zm0 0H12m2.816 0A9.752 9.752 0 0 0 12 9.75a9.752 9.752 0 0 0-2.816-.375M9.75 9.75H8.25m0 0H6.75A2.25 2.25 0 0 0 4.5 12v.75m10.5-6H19.5a2.25 2.25 0 0 1 2.25 2.25v2.75M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
-                        </svg>
-                        Storico
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("dashboard")}
-                        className={`flex flex-col items-center p-2 rounded-xl text-xs font-medium ${activeTab === "dashboard" ? "text-emerald-400 bg-gray-800" : "text-gray-400 hover:text-gray-300"}`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125l7.246-7.246a4.5 4.015 0 0 1 6.136-.554l.001.001 2.929 2.929A3.75 3.75 0 0 1 21 12.125V19.5M3 13.125h1.75c.95 0 1.874.195 2.722.568M3 13.125a6.5 6.5 0 0 0 2.222 3.03M12 7.5h.008v.008H12V7.5Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM12 15h.008v.008H12V15Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM12 15h.008v.008H12V15Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm3.75-5.25h.008v.008h-.008V9.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                        </svg>
-                        Dashboard
-                    </button>
+                    <TabButton icon="dashboard" label="Dashboard" activeTab={activeTab} onClick={() => setActiveTab("dashboard")} />
+                    <TabButton icon="addPoints" label="Punti" activeTab={activeTab} onClick={() => setActiveTab("addPoints")} />
+                    <TabButton icon="history" label="Storico" activeTab={activeTab} onClick={() => setActiveTab("history")} />
+                    {isAllowed && (
+                        <TabButton icon="admin" label="Admin" activeTab={activeTab} onClick={() => setActiveTab("admin")} />
+                    )}
                 </footer>
 
-
+                {/* ======== MODALI ======== */}
                 {createOpen && (
                     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-30">
                         <div className="bg-gray-900 rounded-2xl max-w-sm w-full p-4 space-y-3 border border-gray-800">
@@ -598,8 +529,18 @@
                         </div>
                     </div>
                 )}
+                
+                {/* NUOVO: Modale Profilo Giocatore */}
+                {profilePlayerId && (
+                    <PlayerProfileModal
+                        playerId={profilePlayerId}
+                        players={players}
+                        tx={tx}
+                        events={events}
+                        onClose={() => setProfilePlayerId(null)}
+                    />
+                )}
 
-                {/* Modal de Login */}
                 {showLoginModal && (
                     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-40">
                         <LoginForm onSubmit={doLogin} onCancel={() => setShowLoginModal(false)} />
@@ -608,9 +549,31 @@
             </div>
         );
     }
-
-    // Le altre funzioni (LoginForm, Leaderboard, EventStats, Standings) rimangono le stesse
     
+    // ======== COMPONENTI SATELLITE ========
+
+    // --- Icone per Tab ---
+    const ICONS = {
+        dashboard: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h12A2.25 2.25 0 0 0 20.25 14.25V3M3.75 21h16.5M16.5 3.75h.008v.008H16.5V3.75Z" /></svg>,
+        addPoints: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>,
+        history: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" /></svg>,
+        admin: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0M3.75 18H7.5m3-6h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0M3.75 12H7.5" /></svg>
+    };
+    
+    function TabButton({ icon, label, activeTab, onClick }) {
+        const isActive = activeTab === label.toLowerCase();
+        return (
+            <button
+                onClick={onClick}
+                className={`flex flex-col items-center p-2 rounded-xl text-xs font-medium ${isActive ? "text-emerald-400 bg-gray-800" : "text-gray-400 hover:text-gray-300"}`}
+            >
+                {ICONS[icon]}
+                {label}
+            </button>
+        );
+    }
+    
+    // --- LoginForm (Invariato) ---
     function LoginForm({ onSubmit, onCancel }) {
         const [show, setShow] = React.useState(false);
         return (
@@ -620,16 +583,8 @@
                 <div className="flex items-center gap-2">
                     <input name="password" type={show ? "text" : "password"} placeholder="Password" className="flex-grow px-3 py-2 rounded-xl bg-gray-800 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" required />
                     <button type="button" onClick={()=>setShow(s=>!s)} className="p-2 rounded-xl bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors">
-                        {show ? (
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.988 5.5A.75.75 0 014.73 4.8l2.929 2.929a5.978 5.978 0 00.942 3.067L3.988 5.5zm11.455 1.943a5.979 5.979 0 00-3.067-.942L18.02 19.012a.75.75 0 01-.749.749H5.5a.75.75 0 01-.75-.75V12a.75.75 0 011.5 0v5.694l3.75-3.75a1.5 1.5 0 011.06-.44h.001M21.75 12a9.75 9.75 0 11-19.5 0 9.75 9.75 0 0119.5 0zm-1.874 4.094a3 3 0 01-3.374 1.25L12 12m1.5-1.5L9.75 7.75l-2.003-2.003V2.25H4.5M10.25 15.5l2-2 2.003-2.003V12.75H18m-4.5-4.5L9.75 7.75" />
-                            </svg>
-
-                        ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
+                        {show ? ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L12 12" /></svg>
+                        ) : ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
                         )}
                     </button>
                 </div>
@@ -640,13 +595,154 @@
             </form>
         );
     }
+    
+    // ======== NUOVI COMPONENTI DASHBOARD PRO ========
+    
+    // --- Il Nuovo Dashboard ---
+    function DashboardPro({ standings, players, tx, events, onShowProfile }) {
+        const topTeam = standings[0] || { name: "-", points: 0 };
+        
+        const playerPoints = useMemo(() => {
+             const map = new Map();
+             for (const m of tx) { 
+                 if (!m.playerId) continue; 
+                 const cur = map.get(m.playerId)||{points:0,count:0}; 
+                 cur.points += Number(m.delta)||0; 
+                 cur.count += 1; 
+                 map.set(m.playerId, cur); 
+             }
+             return players.map(p=>({ 
+                 ...p,
+                 points: map.get(p.id)?.points||0, 
+                 count: map.get(p.id)?.count||0 
+             })).sort((a,b)=>b.points-a.points||a.name.localeCompare(b.name));
+        }, [players, tx]);
+        
+        const topPlayer = playerPoints[0] || { name: "-", points: 0 };
 
-    function Leaderboard({ players, tx }) {
-        const map = new Map();
-        for (const m of tx) { if (!m.playerId) continue; const cur = map.get(m.playerId)||{points:0,count:0}; cur.points += Number(m.delta)||0; cur.count += 1; map.set(m.playerId, cur); }
-        const rows = players.map(p=>({ id:p.id, name:p.name, teamId:p.teamId, points: map.get(p.id)?.points||0, count: map.get(p.id)?.count||0 })).sort((a,b)=>b.points-a.points||a.name.localeCompare(b.name));
-        const [q,setQ]=React.useState(""); const [team,setTeam]=React.useState("");
-        const filtered = rows.filter(r => (!team||r.teamId===team) && (!q||r.name.toLowerCase().includes(q.toLowerCase())));
+        return (
+            <section className="space-y-6">
+                {/* 1. Hero Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800 text-center">
+                        <h3 className="text-sm font-semibold text-gray-400">Squadra in Testa</h3>
+                        <p className="text-3xl font-bold" style={{ color: topTeam.color || '#fff' }}>{topTeam.name}</p>
+                        <p className="text-xl text-gray-200">{topTeam.points} Punti</p>
+                    </div>
+                    <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800 text-center">
+                        <h3 className="text-sm font-semibold text-gray-400">Giocatore Top</h3>
+                        <p className="text-3xl font-bold text-emerald-400">{topPlayer.name}</p>
+                        <p className="text-xl text-gray-200">{topPlayer.points} Punti</p>
+                    </div>
+                </div>
+
+                {/* 2. Grafico: Corsa ai Punti */}
+                <div className="bg-gray-900 rounded-2xl p-4 shadow">
+                    <h3 className="text-lg font-semibold mb-3">Corsa ai Punti (Squadre)</h3>
+                    <TeamPointsLineChart tx={tx} />
+                </div>
+                
+                {/* 3. Classifica Giocatori (Cliccabile) */}
+                <div className="bg-gray-900 rounded-2xl p-4 shadow">
+                    <h3 className="text-lg font-semibold mb-3">Classifica Individuale</h3>
+                    <Leaderboard players={playerPoints} onShowProfile={onShowProfile} />
+                </div>
+
+                {/* 4. Statistiche Eventi */}
+                <div className="bg-gray-900 rounded-2xl p-4 shadow">
+                    <h3 className="text-lg font-semibold mb-3">Statistiche Eventi</h3>
+                    <EventStats tx={tx} events={events} />
+                </div>
+            </section>
+        );
+    }
+    
+    // --- Grafico Linee: Punti Squadre nel Tempo ---
+    function TeamPointsLineChart({ tx }) {
+        const chartRef = useRef(null);
+        const chartInstance = useRef(null);
+
+        const chartData = useMemo(() => {
+            const sortedTx = [...tx].sort((a, b) => (a.ts?.toMillis() || 0) - (b.ts?.toMillis() || 0));
+            const datasets = {};
+            const runningTotals = {};
+            const labels = [];
+            
+            TEAM_LIST.forEach(team => {
+                datasets[team.id] = {
+                    label: team.name,
+                    data: [],
+                    borderColor: team.color,
+                    backgroundColor: team.color,
+                    fill: false,
+                    tension: 0.1
+                };
+                runningTotals[team.id] = 0;
+            });
+            
+            let lastDate = null;
+
+            sortedTx.forEach(item => {
+                const date = item.ts?.toDate().toLocaleDateString() || "unknown";
+                
+                if (date !== lastDate) {
+                    labels.push(date);
+                    lastDate = date;
+                    // Porta avanti i totali per la nuova data
+                    TEAM_LIST.forEach(team => {
+                        datasets[team.id].data.push(runningTotals[team.id]);
+                    });
+                }
+                
+                if (runningTotals[item.teamId] !== undefined) {
+                    runningTotals[item.teamId] += (Number(item.delta) || 0);
+                    // Aggiorna l'ultimo punto per la data corrente
+                    datasets[item.teamId].data[datasets[item.teamId].data.length - 1] = runningTotals[item.teamId];
+                }
+            });
+
+            return { labels, datasets: Object.values(datasets) };
+        }, [tx]);
+
+        useEffect(() => {
+            if (!chartRef.current) return;
+            if (chartInstance.current) {
+                chartInstance.current.destroy();
+            }
+            
+            const ctx = chartRef.current.getContext('2d');
+            chartInstance.current = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } },
+                        y: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#d1d5db' } }
+                    }
+                }
+            });
+
+            return () => {
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+            };
+        }, [chartData]);
+
+        return <div className="h-64"><canvas ref={chartRef}></canvas></div>;
+    }
+
+    // --- Tabella Classifica (Ora Cliccabile) ---
+    function Leaderboard({ players, onShowProfile }) {
+        const [q,setQ]=React.useState("");
+        const [team,setTeam]=React.useState("");
+        const filtered = players.filter(r => (!team||r.teamId===team) && (!q||r.name.toLowerCase().includes(q.toLowerCase())));
+        
         return (
             <div className="overflow-x-auto rounded-xl border border-gray-800">
                 <div className="p-2 flex flex-col gap-2 text-sm">
@@ -655,28 +751,30 @@
                         <option value="">Tutte le squadre</option>
                         {TEAM_LIST.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
-                    {(q||team) && (
-                        <button onClick={()=>{setQ(""); setTeam("");}} className="px-2 py-1 bg-gray-800 rounded-lg hover:bg-gray-700">Pulisci</button>
-                    )}
+                    {(q||team) && <button onClick={()=>{setQ(""); setTeam("");}} className="px-2 py-1 bg-gray-800 rounded-lg hover:bg-gray-700">Pulisci</button>}
                 </div>
                 <table className="min-w-full text-sm">
-                    <thead className="bg-gray-800">
-                        <tr className="text-left text-gray-300">
-                            <th className="px-3 py-2">#</th>
-                            <th className="px-3 py-2">Giocatore</th>
-                            <th className="px-3 py-2">Squadra</th>
-                            <th className="px-3 py-2">Eventi</th>
-                            <th className="px-3 py-2">Punti</th>
-                        </tr>
-                    </thead>
+                    <thead className="bg-gray-800"><tr className="text-left text-gray-300">
+                        <th className="px-3 py-2">#</th>
+                        <th className="px-3 py-2">Giocatore</th>
+                        <th className="px-3 py-2">Squadra</th>
+                        <th className="px-3 py-2">Eventi</th>
+                        <th className="px-3 py-2">Punti</th>
+                    </tr></thead>
                     <tbody>
                         {filtered.length===0 ? (
                             <tr><td className="px-3 py-3 text-gray-400" colSpan={5}>Nessun dato.</td></tr>
-                        ) : filtered.map((r,i)=> (
-                            <tr key={r.id} className={(i%2?"bg-gray-900":"bg-gray-950")+" border-t border-gray-800"}>
+                        ) : filtered.slice(0, 15).map((r,i)=> ( // Mostra solo Top 15 per brevità
+                            <tr key={r.id} className={(i%2?"bg-gray-900/50":"")+" border-t border-gray-800"}>
                                 <td className="px-3 py-2">{i+1}</td>
-                                <td className="px-3 py-2">{r.name}</td>
-                                <td className="px-3 py-2">{TEAM_LIST.find(t=>t.id===r.teamId)?.name}</td>
+                                <td className="px-3 py-2">
+                                    <button onClick={() => onShowProfile(r.id)} className="font-medium text-emerald-400 hover:text-emerald-300">
+                                        {r.name}
+                                    </button>
+                                </td>
+                                <td className="px-3 py-2" style={{ color: TEAM_LIST.find(t=>t.id===r.teamId)?.color || '#fff' }}>
+                                    {TEAM_LIST.find(t=>t.id===r.teamId)?.name}
+                                </td>
                                 <td className="px-3 py-2">{r.count}</td>
                                 <td className="px-3 py-2 font-semibold">{r.points}</td>
                             </tr>
@@ -687,7 +785,8 @@
         );
     }
 
-    function EventStats({ tx }) {
+    // --- Statistiche Eventi (Invariato) ---
+    function EventStats({ tx, events }) {
         const map = new Map();
         for (const m of tx) { 
             const cur = map.get(m.eventId)||{count:0,points:0,last:0}; 
@@ -698,19 +797,16 @@
             cur.last=Math.max(cur.last,t); 
             map.set(m.eventId,cur); 
         }
-        const rows = Array.from(map.entries()).map(([eventId,v])=>({ id:eventId, name:(EVENTS.find(e=>e.id===eventId)?.name)||eventId, count:v.count, points:v.points, last:v.last })).sort((a,b)=> b.count-a.count || a.name.localeCompare(b.name));
+        const rows = Array.from(map.entries()).map(([eventId,v])=>({ id:eventId, name:(events.find(e=>e.id===eventId)?.name)||eventId, count:v.count, points:v.points, last:v.last })).sort((a,b)=> b.count-a.count || a.name.localeCompare(b.name));
         return (
             <div className="overflow-x-auto rounded-xl border border-gray-800">
-                <div className="p-2 text-sm text-gray-400">Riepilogo occorrenze e punti per evento.</div>
                 <table className="min-w-full text-sm">
-                    <thead className="bg-gray-800">
-                        <tr className="text-left text-gray-300">
-                            <th className="px-3 py-2">Evento</th>
-                            <th className="px-3 py-2">Occorrenze</th>
-                            <th className="px-3 py-2">Punti totali</th>
-                            <th className="px-3 py-2">Ultima volta</th>
-                        </tr>
-                    </thead>
+                    <thead className="bg-gray-800"><tr className="text-left text-gray-300">
+                        <th className="px-3 py-2">Evento</th>
+                        <th className="px-3 py-2">Occorrenze</th>
+                        <th className="px-3 py-2">Punti totali</th>
+                        <th className="px-3 py-2">Ultima volta</th>
+                    </tr></thead>
                     <tbody>
                         {rows.length===0 ? (
                             <tr><td className="px-3 py-3 text-gray-400" colSpan={4}>Nessun dato.</td></tr>
@@ -727,33 +823,225 @@
             </div>
         );
     }
+    
+    // --- NUOVO: Modale Profilo Giocatore ---
+    function PlayerProfileModal({ playerId, players, tx, events, onClose }) {
+        const player = players.find(p => p.id === playerId);
+        const playerTx = useMemo(() => tx.filter(t => t.playerId === playerId), [tx, playerId]);
 
-    function Standings({ standings }) {
+        const eventStats = useMemo(() => {
+            const map = new Map();
+            for (const m of playerTx) {
+                const ev = events.find(e => e.id === m.eventId);
+                if (!ev) continue;
+                const cur = map.get(m.eventId) || { name: ev.name, count: 0, points: 0 };
+                cur.count += (m.quantity || 1);
+                cur.points += (Number(m.delta) || 0);
+                map.set(m.eventId, cur);
+            }
+            return Array.from(map.values()).sort((a, b) => b.count - a.count);
+        }, [playerTx, events]);
+
+        const totalPoints = playerTx.reduce((sum, t) => sum + (Number(t.delta) || 0), 0);
+        const team = TEAM_LIST.find(t => t.id === player?.teamId);
+        
+        const chartRef = useRef(null);
+        
+        useEffect(() => {
+            if (!chartRef.current) return;
+            const ctx = chartRef.current.getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: eventStats.map(e => e.name),
+                    datasets: [{
+                        label: 'Occorrenze Evento',
+                        data: eventStats.map(e => e.count),
+                        backgroundColor: eventStats.map(e => e.points > 0 ? '#10b981' : '#f43f5e'),
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } },
+                        y: { ticks: { color: '#d1d5db' }, grid: { color: '#374151' } }
+                    },
+                }
+            });
+            return () => chart.destroy();
+        }, [eventStats]);
+
+        if (!player) return null;
+
         return (
-            <div className="overflow-x-auto rounded-xl border border-gray-800">
-                <table className="min-w-full text-sm">
-                    <thead className="bg-gray-800">
-                        <tr className="text-left text-gray-300">
-                            <th className="px-3 py-2">#</th>
-                            <th className="px-3 py-2">Squadra</th>
-                            <th className="px-3 py-2">Punti</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {standings.map((t,i)=>(
-                            <tr key={t.id} className={(i%2?"bg-gray-900":"bg-gray-950")+" border-t border-gray-800"}>
-                                <td className="px-3 py-2">{i+1}</td>
-                                <td className="px-3 py-2 font-medium">{t.name}</td>
-                                <td className="px-3 py-2">{t.points}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-40" onClick={onClose}>
+                <div className="bg-gray-900 rounded-2xl max-w-lg w-full p-6 border border-gray-700 space-y-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h2 className="text-2xl font-bold text-emerald-400">{player.name}</h2>
+                            <p className="text-lg font-semibold" style={{ color: team?.color || '#fff' }}>{team?.name}</p>
+                            <p className="text-xl">{totalPoints} Punti Totali</p>
+                        </div>
+                        <button onClick={onClose} className="text-gray-400 hover:text-white">&times;</button>
+                    </div>
+                    
+                    {/* Grafico Statistiche Eventi */}
+                    <div className="h-64">
+                        <canvas ref={chartRef}></canvas>
+                    </div>
+
+                    {/* Storico Recente */}
+                    <h3 className="text-lg font-semibold">Storico Recente</h3>
+                    <div className="overflow-x-auto rounded-xl border border-gray-800 max-h-48">
+                        <table className="min-w-full text-sm">
+                            <thead className="bg-gray-800"><tr>
+                                <th className="px-3 py-2 text-left">Evento</th>
+                                <th className="px-3 py-2 text-left">Punti</th>
+                                <th className="px-3 py-2 text-left">Data</th>
+                            </tr></thead>
+                            <tbody>
+                                {playerTx.slice(0, 10).map(item => (
+                                    <tr key={item.fid} className="border-t border-gray-800">
+                                        <td className="px-3 py-2">{events.find(e => e.id === item.eventId)?.name || "-"}</td>
+                                        <td className={"px-3 py-2 " + (item.delta >= 0 ? "text-emerald-400" : "text-red-400")}>{item.delta}</td>
+                                        <td className="px-3 py-2">{item.ts?.toDate().toLocaleDateString()}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         );
     }
     
+    // --- NUOVO: Pannello Admin ---
+    function AdminPanel({ players, events, db, collection, doc, setDoc, deleteDoc, addDoc, slugify }) {
+        const [adminTab, setAdminTab] = useState('players');
+
+        async function handlePlayerUpdate(fid, teamId) {
+            if (!fid || !teamId) return alert("Dati mancanti");
+            await setDoc(doc(db, "players", fid), { teamId }, { merge: true });
+            alert("Giocatore aggiornato!");
+        }
+        
+        async function handleEventSave(e) {
+            e.preventDefault();
+            const form = new FormData(e.target);
+            const fid = form.get('fid'); // Se 'fid' esiste, è un update
+            const data = {
+                id: form.get('id').toUpperCase(),
+                name: form.get('name'),
+                points: Number(form.get('points')),
+                allowQuantity: form.get('allowQuantity') === 'on'
+            };
+            
+            if (!data.id || !data.name) return alert("ID e Nome sono obbligatori");
+            
+            const docRef = fid ? doc(db, "events_config", fid) : doc(db, "events_config", data.id);
+            await setDoc(docRef, data, { merge: true });
+            
+            e.target.reset();
+            alert("Evento salvato!");
+        }
+
+        async function handleEventDelete(fid) {
+            if (!confirm("Sei sicuro di voler eliminare questo evento?")) return;
+            await deleteDoc(doc(db, "events_config", fid));
+            alert("Evento eliminato!");
+        }
+        
+        return (
+            <section className="bg-gray-900 rounded-2xl p-4 shadow space-y-4">
+                <h2 className="text-xl font-semibold">Pannello Amministrazione</h2>
+                
+                {/* Navigazione Tab Admin */}
+                <div className="flex gap-2 border-b border-gray-700">
+                    <button onClick={() => setAdminTab('players')} className={`px-4 py-2 ${adminTab === 'players' ? 'border-b-2 border-emerald-400 text-emerald-400' : 'text-gray-400'}`}>Gestione Giocatori</button>
+                    <button onClick={() => setAdminTab('events')} className={`px-4 py-2 ${adminTab === 'events' ? 'border-b-2 border-emerald-400 text-emerald-400' : 'text-gray-400'}`}>Gestione Eventi</button>
+                </div>
+                
+                {/* Tab Gestione Giocatori */}
+                {adminTab === 'players' && (
+                    <div className="space-y-2">
+                        <h3 className="text-lg font-semibold">Gestione Giocatori</h3>
+                        <p className="text-sm text-gray-400">Qui puoi aggiornare la squadra di un giocatore. La creazione avviene nella scheda "Punti".</p>
+                        <div className="overflow-x-auto rounded-xl border border-gray-800 max-h-96">
+                            <table className="min-w-full text-sm">
+                                <thead className="bg-gray-800"><tr>
+                                    <th className="px-3 py-2 text-left">Nome</th>
+                                    <th className="px-3 py-2 text-left">Squadra Attuale</th>
+                                    <th className="px-3 py-2 text-left">Cambia Squadra</th>
+                                </tr></thead>
+                                <tbody>
+                                    {players.map(p => (
+                                        <tr key={p.fid} className="border-t border-gray-800">
+                                            <td className="px-3 py-2">{p.name}</td>
+                                            <td className="px-3 py-2">{TEAM_LIST.find(t => t.id === p.teamId)?.name || "N/A"}</td>
+                                            <td className="px-3 py-2">
+                                                <form onSubmit={(e) => { e.preventDefault(); handlePlayerUpdate(p.fid, e.target.teamId.value); }} className="flex gap-2">
+                                                    <select name="teamId" defaultValue={p.teamId} className="bg-gray-700 rounded-lg px-2 py-1">
+                                                        {TEAM_LIST.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                    </select>
+                                                    <button type="submit" className="bg-emerald-600 px-2 py-1 rounded-lg text-xs">Salva</button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+                
+                {/* Tab Gestione Eventi */}
+                {adminTab === 'events' && (
+                    <div className="space-y-4">
+                        <h3 className="text-lg font-semibold">Gestione Eventi</h3>
+                        
+                        {/* Form Creazione/Modifica Evento */}
+                        <form onSubmit={handleEventSave} className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-gray-800 rounded-lg">
+                            <input name="fid" type="hidden" /> {/* Per Update */}
+                            <input name="id" required placeholder="ID Evento (es. META_PROVA)" className="bg-gray-700 p-2 rounded-lg" />
+                            <input name="name" required placeholder="Nome Evento (es. Meta di Prova)" className="bg-gray-700 p-2 rounded-lg" />
+                            <input name="points" required type="number" step="0.01" placeholder="Punti (es. 1.5 o -2)" className="bg-gray-700 p-2 rounded-lg" />
+                            <label className="flex items-center gap-2 text-sm"><input name="allowQuantity" type="checkbox" className="form-checkbox bg-gray-700" /> Permetti Quantità?</label>
+                            <button type="submit" className="bg-emerald-600 p-2 rounded-lg md:col-span-3">Salva Nuovo Evento</button>
+                        </form>
+                        
+                        {/* Lista Eventi Esistenti */}
+                        <div className="overflow-x-auto rounded-xl border border-gray-800 max-h-96">
+                            <table className="min-w-full text-sm">
+                                <thead className="bg-gray-800"><tr>
+                                    <th className="px-3 py-2 text-left">ID</th>
+                                    <th className="px-3 py-2 text-left">Nome</th>
+                                    <th className="px-3 py-2 text-left">Punti</th>
+                                    <th className="px-3 py-2 text-left">Q.tà?</th>
+                                    <th className="px-3 py-2 text-left">Azioni</th>
+                                </tr></thead>
+                                <tbody>
+                                    {events.map(ev => (
+                                        <tr key={ev.fid} className="border-t border-gray-800">
+                                            <td className="px-3 py-2 font-mono text-xs">{ev.id}</td>
+                                            <td className="px-3 py-2">{ev.name}</td>
+                                            <td className="px-3 py-2">{ev.points}</td>
+                                            <td className="px-3 py-2">{ev.allowQuantity ? 'Sì' : 'No'}</td>
+                                            <td className="px-3 py-2"><button onClick={() => handleEventDelete(ev.fid)} className="bg-red-600 px-2 py-1 rounded-lg text-xs">Elimina</button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+            </section>
+        );
+    }
+
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
+
 </body>
 </html>
