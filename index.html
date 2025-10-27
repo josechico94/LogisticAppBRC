@@ -157,11 +157,8 @@
         const finalDelta = eventPoints * (QUANTITY_EVENTS.includes(form.eventId) ? form.quantity : 1);
         const showQuantityInput = QUANTITY_EVENTS.includes(form.eventId);
         
-        // Nuova logica di validazione: verifica se tutti i giocatori selezionati appartengono alla squadra selezionata nel form
-        const isTeamValid = useMemo(() => {
-            if (!form.teamId || selectedPlayerIds.length === 0) return true;
-            return selectedPlayers.every(p => p.teamId === form.teamId);
-        }, [form.teamId, selectedPlayerIds, selectedPlayers]);
+        // La validazione sul team non è più necessaria qui
+        // const isTeamValid = true; 
 
         async function doLogin(e) {
             e.preventDefault();
@@ -177,38 +174,53 @@
 
         async function addMovement() {
             if (!isAllowed) return alert("Non hai i permessi per scrivere.");
-            if (!form.teamId) return alert("Seleziona una squadra.");
             if (!form.eventId) return alert("Seleziona un evento.");
-            if (!selectedPlayerIds.length) return alert("Seleziona almeno un giocatore.");
+            
+            const isPlayerMovement = selectedPlayerIds.length > 0;
+            
+            if (isPlayerMovement && !selectedPlayerIds.length) return alert("Seleziona almeno un giocatore.");
+            if (!isPlayerMovement && !form.teamId) return alert("Seleziona una squadra per un movimento senza giocatore.");
+            
             if (!form.note) return alert("Aggiungi una nota.");
             if (showQuantityInput && (form.quantity <= 0 || !Number.isInteger(form.quantity))) return alert("La quantità deve essere un numero intero positivo.");
             
-            if (!isTeamValid) return alert("Errore: alcuni giocatori selezionati non appartengono alla squadra scelta. Pulisci la selezione o scegli un'altra squadra.");
-
             const delta = finalDelta;
             const note = (form.note||"").trim();
-            const teamId = form.teamId;
             const quantity = showQuantityInput ? form.quantity : 1;
-
+            
             try {
-                // Crea una transazione per ogni giocatore selezionato
-                const promises = selectedPlayerIds.map(playerId => {
-                    return addDoc(collection(db,"tx"), {
-                        teamId,
-                        playerId, // ID del giocatore
+                if (isPlayerMovement) {
+                    // MOVIMENTO INDIVIDUALE O MASSIVO SU GIOCATORI
+                    const promises = selectedPlayers.map(player => {
+                        return addDoc(collection(db,"tx"), {
+                            // Uso il teamId del giocatore, ignorando quello del form
+                            teamId: player.teamId, 
+                            playerId: player.id,
+                            eventId: form.eventId,
+                            delta,
+                            note,
+                            quantity,
+                            ts: serverTimestamp(),
+                            createdBy: user?.email || null,
+                        });
+                    });
+                    await Promise.all(promises);
+                } else {
+                    // MOVIMENTO GENERALE (SQUADRA)
+                    await addDoc(collection(db,"tx"), {
+                        teamId: form.teamId,
+                        playerId: null, // Nessun giocatore
                         eventId: form.eventId,
-                        delta, // Punti già moltiplicati per la quantità se applicabile
+                        delta,
                         note,
-                        quantity, // Salva la quantità se presente
+                        quantity,
                         ts: serverTimestamp(),
                         createdBy: user?.email || null,
                     });
-                });
-                
-                await Promise.all(promises);
+                }
                 
                 // Reset form
-                setForm(f => ({ ...f, eventId: "", note: "", quantity: 1 })); // Manteniamo la squadra, resettiamo il resto
+                setForm(f => ({ ...f, eventId: "", note: "", quantity: 1 })); 
                 setSelectedPlayerIds([]);
                 setPlayerQuery("");
                 alert("Movimenti aggiunti con successo!");
@@ -223,16 +235,14 @@
             const name = createPlayer.name?.trim(); const teamId = createPlayer.teamId;
             if (!name) return alert("Scrivi un nome."); if (!teamId) return alert("Seleziona una squadra.");
             
-            // Validazione aggiuntiva per squadra (se ci sono altri giocatori già selezionati)
-            if (selectedPlayerIds.length > 0 && form.teamId && teamId !== form.teamId) {
-                 return alert(`Il nuovo giocatore (${name}) appartiene a una squadra diversa da quella selezionata (${form.teamId}). Seleziona prima ${form.teamId} nel form di creazione.`);
-            }
-            
             const fid = slugify(name) || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
             await setDoc(doc(collection(db,"players"), fid), { id: fid, name, teamId });
             setCreateOpen(false); setPlayerQuery("");
             setSelectedPlayerIds(ids => [...ids, fid]);
-            setForm(f=>({ ...f, teamId })); // Imposta la squadra se non è ancora stata selezionata
+            // Imposta la squadra nel form solo se non ci sono altri giocatori (per movimenti generali)
+            if (selectedPlayerIds.length === 0) {
+                 setForm(f=>({ ...f, teamId }));
+            }
         }
 
         async function removeMovement(fid) {
@@ -247,14 +257,14 @@
                 const newIds = ids.includes(playerId)
                     ? ids.filter(id => id !== playerId)
                     : [...ids, playerId];
-                
-                // Opzionale: Provare a impostare la squadra in base al primo giocatore selezionato, ma non è più obbligatorio.
-                // Ho rimosso la logica di forzatura qui per massima libertà di selezione.
-                
                 return newIds;
             });
+            setShowList(false); // Nascondi la lista dopo la selezione
             setPlayerQuery(""); // Pulisci la query dopo la selezione/deselezione
         }
+        
+        const isPlayerSelectionActive = selectedPlayerIds.length > 0;
+
 
         return (
             <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
@@ -285,22 +295,22 @@
                             <div className="grid grid-cols-1 gap-4 items-start">
                                 {/* 1. Campo Selezione Giocatore/i (Aggiornato) */}
                                 <div className="relative">
-                                    <label className="text-sm text-gray-400">Giocatore/i (selezione multipla)</label>
+                                    <label className="text-sm text-gray-400">Giocatore/i (opzionale, seleziona più famiglie)</label>
                                     <input
                                         value={playerQuery}
                                         onChange={e => { setPlayerQuery(e.target.value); setShowList(true); }}
                                         onFocus={() => setShowList(true)}
-                                        onBlur={() => setTimeout(() => setShowList(false), 200)} // Nascondi dopo un breve ritardo per consentire il clic
+                                        onBlur={() => setTimeout(() => setShowList(false), 200)}
                                         placeholder="Scrivi per cercare e selezionare..."
                                         className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"
                                         disabled={!isAllowed}
                                     />
                                     {/* Lista Giocatori Selezionati */}
                                     {selectedPlayers.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-2 p-1 border border-gray-700 rounded-lg">
+                                        <div className="flex flex-wrap gap-1 mt-2 p-1 border border-indigo-500 rounded-lg bg-gray-800">
                                             {selectedPlayers.map(p => (
                                                 <div key={p.id} className="flex items-center bg-indigo-700/50 text-xs px-2 py-1 rounded-full">
-                                                    <span>{p.name}</span>
+                                                    <span>{p.name} - {TEAM_LIST.find(t=>t.id===p.teamId)?.name}</span>
                                                     <button type="button" onClick={() => togglePlayerSelection(p.id)} className="ml-1 text-gray-200 hover:text-white">
                                                         &times;
                                                     </button>
@@ -320,7 +330,7 @@
                                                     <button 
                                                         type="button" 
                                                         key={p.fid} 
-                                                        onMouseDown={(e) => { // Usato onMouseDown per evitare onBlur
+                                                        onMouseDown={(e) => { 
                                                             e.preventDefault(); 
                                                             togglePlayerSelection(p.id); 
                                                         }} 
@@ -338,19 +348,19 @@
                                     </div>
                                 </div>
 
-                                {/* 2. Campo Squadra */}
+                                {/* 2. Campo Squadra - Solo per movimenti senza giocatore */}
                                 <div>
-                                    <label className="text-sm text-gray-400">Squadra (La squadra deve corrispondere a tutti i giocatori selezionati)</label>
+                                    <label className="text-sm text-gray-400">Squadra {!isPlayerSelectionActive && "(obbligatorio se nessun giocatore selezionato)"}</label>
                                     <select
                                         value={form.teamId}
                                         onChange={e=>setForm(f=>({ ...f, teamId:e.target.value }))}
-                                        className={"w-full mt-1 px-3 py-2 rounded-xl bg-gray-800 " + (!isTeamValid ? "border-2 border-red-500" : "")}
+                                        className={"w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"}
                                         disabled={!isAllowed}
                                     >
                                         <option value="">— Seleziona —</option>
                                         {TEAM_LIST.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
-                                    {!isTeamValid && <p className="text-xs text-red-400 mt-1 font-semibold">ATTENZIONE: Alcuni giocatori selezionati non appartengono a questa squadra!</p>}
+                                    {isPlayerSelectionActive && <p className="text-xs text-gray-500 mt-1">Quando sono selezionati dei giocatori, la squadra viene rilevata dal giocatore (anche se di squadre diverse).</p>}
                                 </div>
 
                                 {/* 3. Campo Evento */}
@@ -408,8 +418,8 @@
                                 <div className="flex justify-end">
                                     <button 
                                         onClick={addMovement} 
-                                        disabled={!isAllowed || selectedPlayerIds.length === 0 || !isTeamValid || !form.eventId} 
-                                        className={"px-4 py-2 rounded-xl font-medium " + (isAllowed && selectedPlayerIds.length > 0 && isTeamValid && form.eventId ? "bg-emerald-600 hover:bg-emerald-500":"bg-gray-700 cursor-not-allowed")}
+                                        disabled={!isAllowed || !form.eventId || (!isPlayerSelectionActive && !form.teamId)} 
+                                        className={"px-4 py-2 rounded-xl font-medium " + (isAllowed && form.eventId && (isPlayerSelectionActive || form.teamId) ? "bg-emerald-600 hover:bg-emerald-500":"bg-gray-700 cursor-not-allowed")}
                                     >
                                         Salva movimento{selectedPlayerIds.length > 1 ? ` (${selectedPlayerIds.length} giocatori)` : ''}
                                     </button>
@@ -578,6 +588,8 @@
             </div>
         );
     }
+
+    // Le altre funzioni (LoginForm, Leaderboard, EventStats, Standings) rimangono le stesse
 
     function LoginForm({ onSubmit, onCancel }) {
         const [show, setShow] = React.useState(false);
