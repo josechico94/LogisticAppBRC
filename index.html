@@ -60,10 +60,10 @@
     const EVENTS = [
         { id: "MOTM", name: "MOTM", points: 3 },
         { id: "PEGGIORE_IN_CAMPO", name: "Peggiore in campo", points: -3 },
-        { id: "META", name: "Meta", points: 1, allowQuantity: true }, // 👈 Aggunto flag
-        { id: "DROP_SEGNATO", name: "Drop segnato", points: 1, allowQuantity: true }, // 👈 Aggunto flag
-        { id: "CARTELLINO_GIALLO", name: "Cartellino Giallo", points: -1, allowQuantity: true }, // 👈 Aggunto flag
-        { id: "CARTELLINO_ROSSO", name: "Cartellino rosso", points: -4, allowQuantity: true }, // 👈 Aggunto flag
+        { id: "META", name: "Meta", points: 1, allowQuantity: true },
+        { id: "DROP_SEGNATO", name: "Drop segnato", points: 1, allowQuantity: true },
+        { id: "CARTELLINO_GIALLO", name: "Cartellino Giallo", points: -1, allowQuantity: true },
+        { id: "CARTELLINO_ROSSO", name: "Cartellino rosso", points: -4, allowQuantity: true },
         { id: "META_PIAZZATO_DELLA_VITTORIA", name: "Meta/piazzato della vittoria", points: 2 },
         { id: "MIGLIOR_PLACCAGGIO", name: "Miglior placcaggio", points: 1 },
         { id: "RUGBY_DUMP", name: "Rugby dump", points: 2 },
@@ -82,11 +82,11 @@
         { id: "MANCANZA_3TEMPO", name:"Mancanza 3° tempo", points: -0.5},
         { id: "100% PRESENZE PRE SEASON", name:"100% presenze pre season", points: 6},
         { id: "MIGLIOR DUTY SETTIMANALE", name:"Miglior duty settimanale", points: 1},
-        { id: "PUNIZIONE", name:"Punizione", points: 0.75, allowQuantity: true }, // 👈 Aggunto flag
-        { id: "TRASFORMAZIONE", name:"Trasformazione", points: 0.45, allowQuantity: true } // 👈 Aggunto flag
+        { id: "PUNIZIONE", name:"Punizione", points: 0.75, allowQuantity: true },
+        { id: "TRASFORMAZIONE", name:"Trasformazione", points: 0.45, allowQuantity: true }
     ];
 
-    const QUANTITY_EVENTS = EVENTS.filter(e => e.allowQuantity).map(e => e.id); // Array per una rapida verifica
+    const QUANTITY_EVENTS = EVENTS.filter(e => e.allowQuantity).map(e => e.id);
 
     function slugify(str) { return (str||"").normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'').toUpperCase(); }
 
@@ -98,8 +98,8 @@
         const [tx, setTx] = useState([]);
 
         // Stato aggiornato per selezione massiva e quantità
-        const [selectedPlayerIds, setSelectedPlayerIds] = useState([]); // Array per ID dei giocatori selezionati
-        const [form, setForm] = useState({ teamId: "", eventId: "", note: "", quantity: 1 }); // quantity di default a 1
+        const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
+        const [form, setForm] = useState({ teamId: "", eventId: "", note: "", quantity: 1 });
         
         // Stati per Autocomplete/Selezione Massiva
         const [playerQuery, setPlayerQuery] = useState("");
@@ -156,7 +156,12 @@
         const eventPoints = selectedEvent ? selectedEvent.points : 0;
         const finalDelta = eventPoints * (QUANTITY_EVENTS.includes(form.eventId) ? form.quantity : 1);
         const showQuantityInput = QUANTITY_EVENTS.includes(form.eventId);
-
+        
+        // Nuova logica di validazione: verifica se tutti i giocatori selezionati appartengono alla squadra selezionata nel form
+        const isTeamValid = useMemo(() => {
+            if (!form.teamId || selectedPlayerIds.length === 0) return true;
+            return selectedPlayers.every(p => p.teamId === form.teamId);
+        }, [form.teamId, selectedPlayerIds, selectedPlayers]);
 
         async function doLogin(e) {
             e.preventDefault();
@@ -177,10 +182,13 @@
             if (!selectedPlayerIds.length) return alert("Seleziona almeno un giocatore.");
             if (!form.note) return alert("Aggiungi una nota.");
             if (showQuantityInput && (form.quantity <= 0 || !Number.isInteger(form.quantity))) return alert("La quantità deve essere un numero intero positivo.");
+            
+            if (!isTeamValid) return alert("Errore: alcuni giocatori selezionati non appartengono alla squadra scelta. Pulisci la selezione o scegli un'altra squadra.");
 
             const delta = finalDelta;
             const note = (form.note||"").trim();
             const teamId = form.teamId;
+            const quantity = showQuantityInput ? form.quantity : 1;
 
             try {
                 // Crea una transazione per ogni giocatore selezionato
@@ -191,7 +199,7 @@
                         eventId: form.eventId,
                         delta, // Punti già moltiplicati per la quantità se applicabile
                         note,
-                        quantity: showQuantityInput ? form.quantity : 1, // Salva la quantità se presente
+                        quantity, // Salva la quantità se presente
                         ts: serverTimestamp(),
                         createdBy: user?.email || null,
                     });
@@ -200,7 +208,7 @@
                 await Promise.all(promises);
                 
                 // Reset form
-                setForm({ teamId: "", eventId: "", note: "", quantity: 1 });
+                setForm(f => ({ ...f, eventId: "", note: "", quantity: 1 })); // Manteniamo la squadra, resettiamo il resto
                 setSelectedPlayerIds([]);
                 setPlayerQuery("");
                 alert("Movimenti aggiunti con successo!");
@@ -214,11 +222,17 @@
             if (!isAllowed) return alert("Non hai i permessi per scrivere.");
             const name = createPlayer.name?.trim(); const teamId = createPlayer.teamId;
             if (!name) return alert("Scrivi un nome."); if (!teamId) return alert("Seleziona una squadra.");
+            
+            // Validazione aggiuntiva per squadra (se ci sono altri giocatori già selezionati)
+            if (selectedPlayerIds.length > 0 && form.teamId && teamId !== form.teamId) {
+                 return alert(`Il nuovo giocatore (${name}) appartiene a una squadra diversa da quella selezionata (${form.teamId}). Seleziona prima ${form.teamId} nel form di creazione.`);
+            }
+            
             const fid = slugify(name) || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
             await setDoc(doc(collection(db,"players"), fid), { id: fid, name, teamId });
             setCreateOpen(false); setPlayerQuery("");
-            setSelectedPlayerIds(ids => [...ids, fid]); // Seleziona automaticamente il nuovo giocatore
-            setForm(f=>({ ...f, teamId }));
+            setSelectedPlayerIds(ids => [...ids, fid]);
+            setForm(f=>({ ...f, teamId })); // Imposta la squadra se non è ancora stata selezionata
         }
 
         async function removeMovement(fid) {
@@ -230,26 +244,16 @@
         // Funzione per gestire la selezione/deselezione dei giocatori
         function togglePlayerSelection(playerId) {
             setSelectedPlayerIds(ids => {
-                if (ids.includes(playerId)) {
-                    return ids.filter(id => id !== playerId);
-                } else {
-                    return [...ids, playerId];
-                }
+                const newIds = ids.includes(playerId)
+                    ? ids.filter(id => id !== playerId)
+                    : [...ids, playerId];
+                
+                // Opzionale: Provare a impostare la squadra in base al primo giocatore selezionato, ma non è più obbligatorio.
+                // Ho rimosso la logica di forzatura qui per massima libertà di selezione.
+                
+                return newIds;
             });
-            // Dopo la selezione, imposta il teamId nel form se non è già selezionato, basato sul primo giocatore selezionato
-            if (!selectedPlayerIds.includes(playerId)) {
-                const player = players.find(p => p.id === playerId);
-                if (player) {
-                    setForm(f => ({ ...f, teamId: player.teamId }));
-                }
-            } else if (selectedPlayerIds.length === 1) {
-                // Se si deseleziona l'ultimo giocatore, resetta il teamId
-                setForm(f => ({ ...f, teamId: "" }));
-            }
-            // Nasconde la lista dopo la selezione se non ci sono query e se almeno un giocatore è selezionato
-            if (!playerQuery.trim()) {
-                setShowList(false);
-            }
+            setPlayerQuery(""); // Pulisci la query dopo la selezione/deselezione
         }
 
         return (
@@ -286,6 +290,7 @@
                                         value={playerQuery}
                                         onChange={e => { setPlayerQuery(e.target.value); setShowList(true); }}
                                         onFocus={() => setShowList(true)}
+                                        onBlur={() => setTimeout(() => setShowList(false), 200)} // Nascondi dopo un breve ritardo per consentire il clic
                                         placeholder="Scrivi per cercare e selezionare..."
                                         className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"
                                         disabled={!isAllowed}
@@ -315,7 +320,10 @@
                                                     <button 
                                                         type="button" 
                                                         key={p.fid} 
-                                                        onClick={() => { togglePlayerSelection(p.id); setPlayerQuery(""); }} // Reset query on selection
+                                                        onMouseDown={(e) => { // Usato onMouseDown per evitare onBlur
+                                                            e.preventDefault(); 
+                                                            togglePlayerSelection(p.id); 
+                                                        }} 
                                                         className={"w-full text-left px-3 py-2 border-b border-gray-800 flex items-center justify-between " + (isSelected ? "bg-indigo-700/30 hover:bg-indigo-700/50" : "hover:bg-gray-800")}
                                                     >
                                                         <span>{p.name}</span>
@@ -330,19 +338,19 @@
                                     </div>
                                 </div>
 
-                                {/* 2. Campo Squadra (Sola lettura basato sulla prima selezione) */}
+                                {/* 2. Campo Squadra */}
                                 <div>
-                                    <label className="text-sm text-gray-400">Squadra</label>
+                                    <label className="text-sm text-gray-400">Squadra (La squadra deve corrispondere a tutti i giocatori selezionati)</label>
                                     <select
                                         value={form.teamId}
                                         onChange={e=>setForm(f=>({ ...f, teamId:e.target.value }))}
-                                        className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"
-                                        disabled={!isAllowed || selectedPlayerIds.length > 0} // Disabilitato se ci sono giocatori selezionati
+                                        className={"w-full mt-1 px-3 py-2 rounded-xl bg-gray-800 " + (!isTeamValid ? "border-2 border-red-500" : "")}
+                                        disabled={!isAllowed}
                                     >
                                         <option value="">— Seleziona —</option>
                                         {TEAM_LIST.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
-                                    {selectedPlayerIds.length > 0 && <p className="text-xs text-amber-400 mt-1">La squadra è basata sul primo giocatore selezionato. Puoi cambiarla solo con 0 giocatori selezionati.</p>}
+                                    {!isTeamValid && <p className="text-xs text-red-400 mt-1 font-semibold">ATTENZIONE: Alcuni giocatori selezionati non appartengono a questa squadra!</p>}
                                 </div>
 
                                 {/* 3. Campo Evento */}
@@ -357,7 +365,7 @@
                                                 ...f, 
                                                 eventId:evId, 
                                                 note: ev? ev.name : f.note,
-                                                quantity: 1 // Resetta quantità quando l'evento cambia
+                                                quantity: 1
                                             })); 
                                         }} 
                                         className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800" 
@@ -368,7 +376,7 @@
                                     </select>
                                 </div>
                                 
-                                {/* 4. Campo Quantità (NUOVO) - Mostrato solo per eventi specifici */}
+                                {/* 4. Campo Quantità (NUOVO) */}
                                 {showQuantityInput && (
                                     <div>
                                         <label className="text-sm text-gray-400">Quantità (N. di eventi)</label>
@@ -385,7 +393,7 @@
                                 )}
 
 
-                                {/* 5. Campo Punti (Ora calcolato con quantità) */}
+                                {/* 5. Campo Punti */}
                                 <div>
                                     <label className="text-sm text-gray-400">Punti Totali per Giocatore</label>
                                     <input value={finalDelta} readOnly disabled className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800 opacity-70 cursor-not-allowed" />
@@ -398,13 +406,19 @@
                                 </div>
 
                                 <div className="flex justify-end">
-                                    <button onClick={addMovement} disabled={!isAllowed || selectedPlayerIds.length === 0} className={"px-4 py-2 rounded-xl font-medium " + (isAllowed && selectedPlayerIds.length > 0 ? "bg-emerald-600 hover:bg-emerald-500":"bg-gray-700 cursor-not-allowed")}>
+                                    <button 
+                                        onClick={addMovement} 
+                                        disabled={!isAllowed || selectedPlayerIds.length === 0 || !isTeamValid || !form.eventId} 
+                                        className={"px-4 py-2 rounded-xl font-medium " + (isAllowed && selectedPlayerIds.length > 0 && isTeamValid && form.eventId ? "bg-emerald-600 hover:bg-emerald-500":"bg-gray-700 cursor-not-allowed")}
+                                    >
                                         Salva movimento{selectedPlayerIds.length > 1 ? ` (${selectedPlayerIds.length} giocatori)` : ''}
                                     </button>
                                 </div>
                             </div>
                         </section>
                     )}
+
+                    {/* Le altre sezioni (Storico, Dashboard, Footer, Modals) rimangono le stesse */}
 
                     {activeTab === "history" && (
                         <section className="bg-gray-900 rounded-2xl p-4 shadow">
@@ -447,7 +461,7 @@
                                             <th className="px-3 py-2">Squadra</th>
                                             <th className="px-3 py-2">Giocatore</th>
                                             <th className="px-3 py-2">Evento</th>
-                                            <th className="px-3 py-2">Quantità</th> {/* 👈 Nuova Colonna */}
+                                            <th className="px-3 py-2">Quantità</th>
                                             <th className="px-3 py-2">Δ Punti</th>
                                             <th className="px-3 py-2">Data</th>
                                             <th className="px-3 py-2"></th>
@@ -461,13 +475,13 @@
                                             const playerName = players.find(p=>p.id===item.playerId)?.name || "-";
                                             const eventName = EVENTS.find(e=>e.id===item.eventId)?.name || "-";
                                             const stamp = item.ts?.toDate ? item.ts.toDate().toLocaleString() : "-";
-                                            const quantity = item.quantity || 1; // 👈 Usa item.quantity o 1 di default
+                                            const quantity = item.quantity || 1;
                                             return (
                                                 <tr key={item.fid} className="border-t border-gray-800">
                                                     <td className="px-3 py-2">{teamName}</td>
                                                     <td className="px-3 py-2">{playerName}</td>
                                                     <td className="px-3 py-2">{eventName}</td>
-                                                    <td className="px-3 py-2">{quantity}</td> {/* 👈 Valore Quantità */}
+                                                    <td className="px-3 py-2">{quantity}</td>
                                                     <td className={"px-3 py-2 " + (item.delta>=0 ? "text-emerald-400":"text-red-400")}>{item.delta>=0?"+":""}{item.delta}</td>
                                                     <td className="px-3 py-2 whitespace-nowrap">{stamp}</td>
                                                     <td className="px-3 py-2 text-right">
@@ -507,7 +521,6 @@
                     )}
                 </main>
 
-                {/* Navegación inferior tipo app móvil (sin cambios) */}
                 <footer className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex justify-around p-2 shadow-lg z-20">
                     <button
                         onClick={() => setActiveTab("addPoints")}
@@ -556,7 +569,7 @@
                     </div>
                 )}
 
-                {/* Modal de Login (sin cambios) */}
+                {/* Modal de Login */}
                 {showLoginModal && (
                     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-40">
                         <LoginForm onSubmit={doLogin} onCancel={() => setShowLoginModal(false)} />
@@ -565,8 +578,6 @@
             </div>
         );
     }
-
-    // Le altre funzioni (LoginForm, Leaderboard, EventStats, Standings) rimangono invariate
 
     function LoginForm({ onSubmit, onCancel }) {
         const [show, setShow] = React.useState(false);
@@ -648,8 +659,8 @@
         const map = new Map();
         for (const m of tx) { 
             const cur = map.get(m.eventId)||{count:0,points:0,last:0}; 
-            const quantity = m.quantity || 1; // Usa quantity salvata o 1
-            cur.count += quantity; // Conta per quantità
+            const quantity = m.quantity || 1;
+            cur.count += quantity;
             cur.points += Number(m.delta)||0; 
             const t=m.ts?.toMillis?m.ts.toMillis():0; 
             cur.last=Math.max(cur.last,t); 
