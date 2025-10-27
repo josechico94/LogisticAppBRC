@@ -73,7 +73,7 @@
         { id: "MIGLIOR_BALL_CARRIER", name: "Miglior ball carrier", points: 3 },
         { id: "PIU_PUNIZIONI_CONCESSE", name: "Più punizioni concesse", points: -4 },
         { id: "MIGLIOR_TURNOVER", name: "Miglior turnover", points: 2 },
-        { id: "PRESENZE_100", name: "100% presenze", points: 2 },
+        { id: "PRESENZE_100", name: "100% presenze", points: 3 },
         { id: "DUE_VS_UNO_MANCATO", name: "2vs1 mancato", points: -1 },
         { id: "DUTY_MALE", name: "Duty male", points: -1 },
         { id: "TROMBATA_SCONOSCIUTA", name:"Trombata sconosciuta", points: 2},
@@ -97,14 +97,11 @@
         const [players, setPlayers] = useState([]);
         const [tx, setTx] = useState([]);
         
-        // Ref para gestionar el foco en el input de jugador
         const playerInputRef = React.useRef(null);
 
-        // Stato aggiornato per selezione massiva e quantità
         const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
         const [form, setForm] = useState({ teamId: "", eventId: "", note: "", quantity: 1 });
         
-        // Stati per Autocomplete/Selezione Massiva
         const [playerQuery, setPlayerQuery] = useState("");
         const [showList, setShowList] = useState(false);
 
@@ -172,7 +169,6 @@
         }
         function doLogout() { signOut(auth); }
         
-        // NUEVA FUNCION: Limpiar seleccion de jugadores
         function clearPlayerSelection() {
             setSelectedPlayerIds([]);
             setPlayerQuery("");
@@ -194,15 +190,13 @@
             const delta = finalDelta;
             const note = (form.note||"").trim();
             const quantity = showQuantityInput ? form.quantity : 1;
-            let transactionsCount = 0; // Contador de transacciones
+            let transactionsCount = 0;
             
             try {
                 if (isPlayerMovement) {
-                    // MOVIMENTO INDIVIDUALE O MASSIVO SU GIOCATORI
                     const promises = selectedPlayers.map(player => {
                         transactionsCount++;
                         return addDoc(collection(db,"tx"), {
-                            // Uso il teamId del giocatore, ignorando quello del form
                             teamId: player.teamId, 
                             playerId: player.id,
                             eventId: form.eventId,
@@ -215,11 +209,10 @@
                     });
                     await Promise.all(promises);
                 } else {
-                    // MOVIMENTO GENERALE (SQUADRA)
                     transactionsCount = 1;
                     await addDoc(collection(db,"tx"), {
                         teamId: form.teamId,
-                        playerId: null, // Nessun giocatore
+                        playerId: null,
                         eventId: form.eventId,
                         delta,
                         note,
@@ -229,15 +222,13 @@
                     });
                 }
                 
-                // Reset form
                 setForm(f => ({ ...f, eventId: "", note: "", quantity: 1 })); 
                 setSelectedPlayerIds([]);
                 setPlayerQuery("");
                 
-                // FEEDBACK AÑADIDO: Muestra el número de transacciones
-                alert(`Movimientos añadidos con éxito! Creadas ${transactionsCount} transacciones.`);
+                alert(`Movimenti aggiunti con successo! Creadas ${transactionsCount} transacciones.`);
 
-                playerInputRef.current?.focus(); // Foco después de guardar
+                playerInputRef.current?.focus();
             } catch (error) {
                 console.error("Errore nell'aggiunta dei movimenti:", error);
                 alert("Errore nell'aggiunta dei movimenti: " + error.message);
@@ -252,13 +243,13 @@
             const fid = slugify(name) || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
             await setDoc(doc(collection(db,"players"), fid), { id: fid, name, teamId });
             setCreateOpen(false); 
-            setPlayerQuery("");
+            // setPlayerQuery(""); // Rimosso per non resettare la query di ricerca corrente
             setSelectedPlayerIds(ids => [...ids, fid]);
             
             if (selectedPlayerIds.length === 0) {
                  setForm(f=>({ ...f, teamId }));
             }
-            playerInputRef.current?.focus(); // Foco después de crear
+            playerInputRef.current?.focus();
         }
 
         async function removeMovement(fid) {
@@ -267,7 +258,6 @@
             await deleteDoc(doc(db,"tx",fid));
         }
 
-        // Funzione per gestire la selezione/deselezione dei giocatori
         function togglePlayerSelection(playerId) {
             setSelectedPlayerIds(ids => {
                 const newIds = ids.includes(playerId)
@@ -275,9 +265,11 @@
                     : [...ids, playerId];
                 return newIds;
             });
-            setShowList(false);
-            setPlayerQuery("");
-            playerInputRef.current?.focus(); // Foco después de seleccionar/deseleccionar
+            
+            // NON chiudiamo la lista né resettiamo la query qui
+            // La query rimane per continuare a filtrare o selezionare un altro giocatore.
+            
+            playerInputRef.current?.focus(); 
         }
         
         const isPlayerSelectionActive = selectedPlayerIds.length > 0;
@@ -310,14 +302,15 @@
                             {!isAllowed && <span className="text-xs text-amber-400 mb-4 block">Effettua l'accesso con un'email autorizzata per aggiungere/modificare</span>}
 
                             <div className="grid grid-cols-1 gap-4 items-start">
-                                {/* 1. Campo Selezione Giocatore/i (Aggiornato con Ref) */}
+                                {/* 1. Campo Selezione Giocatore/i */}
                                 <div className="relative">
                                     <label className="text-sm text-gray-400">Giocatore/i (opzionale, seleziona più famiglie)</label>
                                     <input
-                                        ref={playerInputRef} // REFERENCIA AÑADIDA PARA EL FOCO
+                                        ref={playerInputRef} 
                                         value={playerQuery}
                                         onChange={e => { setPlayerQuery(e.target.value); setShowList(true); }}
                                         onFocus={() => setShowList(true)}
+                                        // La lista si chiude solo se clicchi fuori
                                         onBlur={() => setTimeout(() => setShowList(false), 200)}
                                         placeholder="Scrivi per cercare e selezionare..."
                                         className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"
@@ -334,7 +327,6 @@
                                                     </button>
                                                 </div>
                                             ))}
-                                            {/* BOTÓN DE LIMPIEZA TOTAL AÑADIDO */}
                                             <button 
                                                 type="button" 
                                                 onClick={clearPlayerSelection} 
@@ -359,6 +351,7 @@
                                                         onMouseDown={(e) => { 
                                                             e.preventDefault(); 
                                                             togglePlayerSelection(p.id); 
+                                                            // Non resettiamo la query qui!
                                                         }} 
                                                         className={"w-full text-left px-3 py-2 border-b border-gray-800 flex items-center justify-between " + (isSelected ? "bg-indigo-700/30 hover:bg-indigo-700/50" : "hover:bg-gray-800")}
                                                     >
@@ -616,7 +609,8 @@
     }
 
     // Le altre funzioni (LoginForm, Leaderboard, EventStats, Standings) rimangono le stesse
-
+    // (Sono state omesse per brevità, ma non sono cambiate.)
+    
     function LoginForm({ onSubmit, onCancel }) {
         const [show, setShow] = React.useState(false);
         return (
@@ -758,7 +752,7 @@
             </div>
         );
     }
-
+    
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
