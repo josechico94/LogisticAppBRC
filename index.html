@@ -96,6 +96,9 @@
 
         const [players, setPlayers] = useState([]);
         const [tx, setTx] = useState([]);
+        
+        // Ref para gestionar el foco en el input de jugador
+        const playerInputRef = React.useRef(null);
 
         // Stato aggiornato per selezione massiva e quantità
         const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
@@ -157,9 +160,6 @@
         const finalDelta = eventPoints * (QUANTITY_EVENTS.includes(form.eventId) ? form.quantity : 1);
         const showQuantityInput = QUANTITY_EVENTS.includes(form.eventId);
         
-        // La validazione sul team non è più necessaria qui
-        // const isTeamValid = true; 
-
         async function doLogin(e) {
             e.preventDefault();
             const email = e.target.email.value.trim();
@@ -171,6 +171,13 @@
             catch(err) { alert("Login fallito: " + err.message); }
         }
         function doLogout() { signOut(auth); }
+        
+        // NUEVA FUNCION: Limpiar seleccion de jugadores
+        function clearPlayerSelection() {
+            setSelectedPlayerIds([]);
+            setPlayerQuery("");
+            playerInputRef.current?.focus();
+        }
 
         async function addMovement() {
             if (!isAllowed) return alert("Non hai i permessi per scrivere.");
@@ -187,11 +194,13 @@
             const delta = finalDelta;
             const note = (form.note||"").trim();
             const quantity = showQuantityInput ? form.quantity : 1;
+            let transactionsCount = 0; // Contador de transacciones
             
             try {
                 if (isPlayerMovement) {
                     // MOVIMENTO INDIVIDUALE O MASSIVO SU GIOCATORI
                     const promises = selectedPlayers.map(player => {
+                        transactionsCount++;
                         return addDoc(collection(db,"tx"), {
                             // Uso il teamId del giocatore, ignorando quello del form
                             teamId: player.teamId, 
@@ -207,6 +216,7 @@
                     await Promise.all(promises);
                 } else {
                     // MOVIMENTO GENERALE (SQUADRA)
+                    transactionsCount = 1;
                     await addDoc(collection(db,"tx"), {
                         teamId: form.teamId,
                         playerId: null, // Nessun giocatore
@@ -223,7 +233,11 @@
                 setForm(f => ({ ...f, eventId: "", note: "", quantity: 1 })); 
                 setSelectedPlayerIds([]);
                 setPlayerQuery("");
-                alert("Movimenti aggiunti con successo!");
+                
+                // FEEDBACK AÑADIDO: Muestra el número de transacciones
+                alert(`Movimientos añadidos con éxito! Creadas ${transactionsCount} transacciones.`);
+
+                playerInputRef.current?.focus(); // Foco después de guardar
             } catch (error) {
                 console.error("Errore nell'aggiunta dei movimenti:", error);
                 alert("Errore nell'aggiunta dei movimenti: " + error.message);
@@ -237,12 +251,14 @@
             
             const fid = slugify(name) || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
             await setDoc(doc(collection(db,"players"), fid), { id: fid, name, teamId });
-            setCreateOpen(false); setPlayerQuery("");
+            setCreateOpen(false); 
+            setPlayerQuery("");
             setSelectedPlayerIds(ids => [...ids, fid]);
-            // Imposta la squadra nel form solo se non ci sono altri giocatori (per movimenti generali)
+            
             if (selectedPlayerIds.length === 0) {
                  setForm(f=>({ ...f, teamId }));
             }
+            playerInputRef.current?.focus(); // Foco después de crear
         }
 
         async function removeMovement(fid) {
@@ -259,8 +275,9 @@
                     : [...ids, playerId];
                 return newIds;
             });
-            setShowList(false); // Nascondi la lista dopo la selezione
-            setPlayerQuery(""); // Pulisci la query dopo la selezione/deselezione
+            setShowList(false);
+            setPlayerQuery("");
+            playerInputRef.current?.focus(); // Foco después de seleccionar/deseleccionar
         }
         
         const isPlayerSelectionActive = selectedPlayerIds.length > 0;
@@ -293,10 +310,11 @@
                             {!isAllowed && <span className="text-xs text-amber-400 mb-4 block">Effettua l'accesso con un'email autorizzata per aggiungere/modificare</span>}
 
                             <div className="grid grid-cols-1 gap-4 items-start">
-                                {/* 1. Campo Selezione Giocatore/i (Aggiornato) */}
+                                {/* 1. Campo Selezione Giocatore/i (Aggiornato con Ref) */}
                                 <div className="relative">
                                     <label className="text-sm text-gray-400">Giocatore/i (opzionale, seleziona più famiglie)</label>
                                     <input
+                                        ref={playerInputRef} // REFERENCIA AÑADIDA PARA EL FOCO
                                         value={playerQuery}
                                         onChange={e => { setPlayerQuery(e.target.value); setShowList(true); }}
                                         onFocus={() => setShowList(true)}
@@ -305,9 +323,9 @@
                                         className="w-full mt-1 px-3 py-2 rounded-xl bg-gray-800"
                                         disabled={!isAllowed}
                                     />
-                                    {/* Lista Giocatori Selezionati */}
+                                    {/* Lista Giocatori Selezionati (Aggiornato con Botón Limpiar) */}
                                     {selectedPlayers.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-2 p-1 border border-indigo-500 rounded-lg bg-gray-800">
+                                        <div className="flex flex-wrap gap-1 mt-2 p-1 border border-indigo-500 rounded-lg bg-gray-800 items-center">
                                             {selectedPlayers.map(p => (
                                                 <div key={p.id} className="flex items-center bg-indigo-700/50 text-xs px-2 py-1 rounded-full">
                                                     <span>{p.name} - {TEAM_LIST.find(t=>t.id===p.teamId)?.name}</span>
@@ -316,6 +334,14 @@
                                                     </button>
                                                 </div>
                                             ))}
+                                            {/* BOTÓN DE LIMPIEZA TOTAL AÑADIDO */}
+                                            <button 
+                                                type="button" 
+                                                onClick={clearPlayerSelection} 
+                                                className="text-xs px-2 py-1 rounded-full bg-red-700/50 text-white hover:bg-red-600/70 ml-auto transition-colors"
+                                            >
+                                                Limpiar Selección Total
+                                            </button>
                                         </div>
                                     )}
 
