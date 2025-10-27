@@ -1,3 +1,48 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>LogisticApp - BRC</title>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import {
+            getFirestore, collection, doc, addDoc, setDoc, deleteDoc,
+            onSnapshot, query, orderBy, serverTimestamp, getDocs
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import {
+            getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+            signOut, setPersistence, browserLocalPersistence
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        // Config Firebase (tu proyecto)
+        const firebaseConfig = {"apiKey": "AIzaSyB_9OlPqcZ78v9NDJAlr9FxNvYcmgjbyJE", "authDomain": "brc-logistica-famiglie.firebaseapp.com", "projectId": "brc-logistica-famiglie", "storageBucket": "brc-logistica-famiglie.firebasestorage.app", "messagingSenderId": "1097198392202", "appId": "1:1097198392202:web:90ebc7279ab8fd1c7aae73", "measurementId": "G-L88QJ4N0PC"};
+
+        // Emails autorizzati ad inserire punti
+        const ALLOWED_EMAILS = ["admin@gmail.com", "admin@brc.com", "andreafava03@gmail.com","salvicristiano@libero.it","admin.brc@gmail.com", "bottesilvio@hotmail.com", "nicco.rega@gmail.com", "joseichico94@gmail.com"];
+
+        // Inizializza Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        setPersistence(auth, browserLocalPersistence);
+
+        // Esponi per React (Babel)
+        window._fb = {
+            db, collection, doc, addDoc, setDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs,
+            auth, onAuthStateChanged, signInWithEmailAndPassword, signOut, ALLOWED_EMAILS
+        };
+    </script>
+</head>
+<body class="bg-gray-950">
+    <div id="root"></div>
+
 <script type="text/babel">
     const { useEffect, useMemo, useState } = React;
     const {
@@ -710,3 +755,5 @@
     
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
+</body>
+</html>
