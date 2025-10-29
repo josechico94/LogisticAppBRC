@@ -627,12 +627,12 @@
                     <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800 text-center">
                         <h3 className="text-sm font-semibold text-gray-400">Squadra in Testa</h3>
                         <p className="text-3xl font-bold" style={{ color: topTeam.color || '#fff' }}>{topTeam.name}</p>
-                        <p className="text-xl text-gray-200">{topTeam.points} Punti</p>
+                        <p className="text-xl text-gray-200">{topTeam.points.toFixed(2)} Punti</p>
                     </div>
                     <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800 text-center">
                         <h3 className="text-sm font-semibold text-gray-400">Giocatore Top</h3>
                         <p className="text-3xl font-bold text-emerald-400">{topPlayer.name}</p>
-                        <p className="text-xl text-gray-200">{topPlayer.points} Punti</p>
+                        <p className="text-xl text-gray-200">{topPlayer.points.toFixed(2)} Punti</p>
                     </div>
                 </div>
 
@@ -722,7 +722,21 @@
                         y: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } }
                     },
                     plugins: {
-                        legend: { labels: { color: '#d1d5db' } }
+                        legend: { labels: { color: '#d1d5db' } },
+                        tooltip: { // <-- AÑADIR ESTO
+                           callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toFixed(2); // Formatear el tooltip
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
                     }
                 }
             });
@@ -776,7 +790,7 @@
                                     {TEAM_LIST.find(t=>t.id===r.teamId)?.name}
                                 </td>
                                 <td className="px-3 py-2">{r.count}</td>
-                                <td className="px-3 py-2 font-semibold">{r.points}</td>
+                                <td className="px-3 py-2 font-semibold">{r.points.toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -814,7 +828,7 @@
                             <tr key={r.id} className="border-t border-gray-800">
                                 <td className="px-3 py-2">{r.name}</td>
                                 <td className="px-3 py-2">{r.count}</td>
-                                <td className={"px-3 py-2 " + (r.points>=0?"text-emerald-400":"text-red-400")}>{r.points>=0?"+":""}{r.points}</td>
+                                <td className={"px-3 py-2 " + (r.points>=0?"text-emerald-400":"text-red-400")}>{r.points>=0?"+":""}{r.points.toFixed(2)}</td>
                                 <td className="px-3 py-2">{r.last? new Date(r.last).toLocaleString(): "-"}</td>
                             </tr>
                         ))}
@@ -882,7 +896,7 @@
                         <div>
                             <h2 className="text-2xl font-bold text-emerald-400">{player.name}</h2>
                             <p className="text-lg font-semibold" style={{ color: team?.color || '#fff' }}>{team?.name}</p>
-                            <p className="text-xl">{totalPoints} Punti Totali</p>
+                            <p className="text-xl">{totalPoints.toFixed(2)} Punti Totali</p>
                         </div>
                         <button onClick={onClose} className="text-gray-400 hover:text-white">&times;</button>
                     </div>
