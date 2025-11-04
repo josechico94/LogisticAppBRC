@@ -268,9 +268,20 @@
             setProfilePlayerId(playerId);
         }
 
-        if (loading) {
-             return <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center"><h1 className="text-xl font-bold">Caricamento LogisticApp...</h1></div>
-        }
+            // --- PANTALLA DE CARGA ---
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center justify-center p-4">
+                        <img
+                            src="./img/bologna_rugby_logo.png" // <--- Asegúrate de que esta ruta y nombre de archivo sean correctos
+                            alt="Caricamento LogisticApp..." // Texto alternativo para accesibilidad
+                            className="w-32 h-32 mb-4 animate-spin" // Ajusté el tamaño para que se vea bien como logo giratorio
+                        />
+                        <h1 className="text-xl font-bold">Caricamento LogisticApp...</h1>
+                    </div>
+                );
+            }
+
 
         return (
             <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
