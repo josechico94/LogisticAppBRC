@@ -273,19 +273,21 @@
                 return (
                     <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center justify-center p-4">
                         <img
-                            src="./img/bologna_rugby_logo.png" // <--- Asegúrate de que esta ruta y nombre de archivo sean correctos
-                            alt="Caricamento LogisticApp..." // Texto alternativo para accesibilidad
-                            className="w-32 h-32 mb-4 animate-spin" // Ajusté el tamaño para que se vea bien como logo giratorio
+                            src="./img/bologna_rugby_logo.png"
+                            alt="Caricamento LogisticApp..."
+                            className="w-32 h-32 mb-4 animate-pulse" // <--- CAMBIO AQUÍ: Usamos animate-pulse
                         />
                         <h1 className="text-xl font-bold">Caricamento LogisticApp...</h1>
                     </div>
                 );
             }
+            // --- FIN PANTALLA DE CARGA ---
 
 
         return (
             <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
                 <header className="flex items-center justify-between p-4 bg-gray-900 border-b border-gray-800">
+                    <img src="./img/bologna_rugby_logo.png" />
                     <h1 className="text-xl font-bold">LogisticApp - BRC 🏉</h1>
                     <div className="flex items-center gap-2">
                         {user ? (
