@@ -1,0 +1,21 @@
+{
+  "name": "LogisticApp - BRC",
+  "short_name": "BRC App",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#030712",
+  "description": "App per la logistica e i punteggi del BRC.",
+  "icons": [
+    {
+      "src": "./img/bologna_rugby_logo_192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./img/bologna_rugby_logo_512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
